@@ -12,6 +12,7 @@ import {
   searchIssues,
   listIssues,
   listArchivedIssues,
+  listAllTickets,
   getIssue,
   getIssueBySequence,
   getIssueProjectId,
@@ -114,8 +115,10 @@ import {
   BulkUpdatedResponse,
   BulkArchivedResponse,
   BulkDeletedResponse,
-  BoardResponse,
+  AllTicketsResponse,
+  allTicketsQuery,
   WatchStateResponse,
+  BoardResponse,
 } from './model';
 
 // The subtask choice a delete or archive request carries, or undefined when it
@@ -430,6 +433,30 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
           'Get an issue by its project-scoped number: the 42 in "MKT-42". Use this when you were given an identifier; get_issue takes the internal numeric id instead.',
         ...mcpTool('get_issue_by_number'),
       },
+    },
+  )
+
+  // The cross-project list behind the global All tickets board: every active issue
+  // in a project the session user is a member of, each row carrying its project
+  // and the state group of its column. Read only by design (ADR 0002 keeps ticket
+  // writes per-project): there is no move or edit here — a change goes through the
+  // owning project's own routes. Web-only (not an MCP tool).
+  .get(
+    '/issues',
+    async ({ query, user }) => {
+      const u = requireUser(user);
+      return {
+        issues: await listAllTickets(u.id, {
+          stateType: query.stateType,
+          query: query.query,
+          limit: query.limit,
+        }),
+      };
+    },
+    {
+      query: allTicketsQuery,
+      response: { 200: AllTicketsResponse },
+      detail: { summary: 'List issues across projects' },
     },
   )
 

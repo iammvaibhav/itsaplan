@@ -3,6 +3,8 @@
   "dashboards": "لوحات المعلومات",
   "workItems": "عناصر العمل (work items)",
   "allWorkItems": "كل عناصر العمل (work items)",
+  "allTickets": "كل التذاكر",
+  "searchTickets": "ابحث في التذاكر…",
   "initiatives": "المبادرات (initiatives)",
   "cycles": "الدورات (cycles)",
   "notes": "الملاحظات",
@@ -41,5 +43,6 @@
     "automation": "الأتمتة"
   },
   "godModeOwnerOnly": "وضع المشرف متاح لمالك النسخة بس.",
-  "project": "المشروع"
+  "project": "المشروع",
+  "noTickets": "لا تذاكر مطابقة"
 }

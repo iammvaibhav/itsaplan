@@ -10,6 +10,10 @@ export const viewPath = (key: string, viewId: number | null) =>
 
 export const dashboardsPath = (key: string) => `${projectPath(key)}/dashboard`;
 
+// The global cross-project board. Not under /project/: it is reachable without
+// picking a project first.
+export const ticketsPath = '/tickets';
+
 // Public read-only share pages (no auth). The token is the unguessable share key.
 export const shareIssuePath = (token: string) => `/share/issue/${token}`;
 export const shareViewPath = (token: string) => `/share/view/${token}`;

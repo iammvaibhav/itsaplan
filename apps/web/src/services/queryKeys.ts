@@ -11,6 +11,9 @@ export const qk = {
   boardIssues: (projectKey: string) => ['boardIssues', projectKey] as const,
   // A project's archived issues.
   archivedIssues: (projectKey: string) => ['archivedIssues', projectKey] as const,
+  // The cross-project All tickets list. `params` scopes the cache entry to the
+  // active filters (stateType, query).
+  allTickets: (params: unknown) => ['allTickets', params] as const,
   // Command-palette issue search, scoped to a project and the search term.
   issueSearch: (projectKey: string, q: string) => ['issueSearch', projectKey, q] as const,
   // The project's auto-archive thresholds and subtask automations (the

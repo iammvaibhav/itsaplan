@@ -1835,6 +1835,56 @@ export interface BoardIssues {
   issues: BoardIssue[];
 }
 
+// --- Cross-project list (GET /issues, the global All tickets board) ----------------
+
+export interface AllTicketsParams {
+  // Filter by the state group of the issue's column.
+  stateType?: StateType;
+  // Case-insensitive substring match on the title.
+  query?: string;
+}
+
+// One label on an AllTicket.
+export interface AllTicketLabel {
+  id: number;
+  name: string;
+  color: string;
+}
+
+// One row of the cross-project list. Everything a global card renders arrives
+// expanded (project, column, type, assignee, labels) so the client needs no
+// per-project lookup tables.
+export interface AllTicket {
+  id: number;
+  projectId: number;
+  projectKey: string;
+  projectName: string;
+  sequenceNumber: number;
+  identifier: string;
+  title: string;
+  columnId: number;
+  columnName: string;
+  columnColor: string;
+  // The state group of the issue's column — the key the global board groups by.
+  stateType: StateType;
+  typeId: number | null;
+  typeName: string | null;
+  typeIcon: string | null;
+  typeColor: string | null;
+  priority: string | null;
+  assigneeUserId: string | null;
+  assigneeName: string | null;
+  assigneeImage: string | null;
+  dueDate: string | null;
+  position: number;
+  updatedAt: string;
+  labels: AllTicketLabel[];
+}
+
+export interface AllTickets {
+  issues: AllTicket[];
+}
+
 // The scaffold composed with its issues and the project's unfinished cycles, as
 // the Shell assembles it and passes it down. Downstream reads project.issues off
 // this composite. `plannedCycles` is empty while the Cycles section is off and on a
@@ -2445,6 +2495,16 @@ export const api = {
   // The board's issues and their relations.
   getBoardIssues: (projectKey: string) =>
     request<BoardIssues>(`/projects/${projectKey}/issues/board`),
+  // The cross-project list behind the global All tickets board: the active issues
+  // of every project the session user is a member of. Read-only — moves and edits
+  // stay on the per-project routes.
+  getAllTickets: (params: AllTicketsParams = {}) => {
+    const qs = new URLSearchParams();
+    if (params.stateType) qs.set('stateType', params.stateType);
+    if (params.query?.trim()) qs.set('query', params.query.trim());
+    const suffix = qs.size > 0 ? `?${qs.toString()}` : '';
+    return request<AllTickets>(`/issues${suffix}`);
+  },
   // The change markers of every scope the client is watching, in one request.
   // Polled by the sync provider; see utils/revScopes.
   getRevs: (scopes: string[]) =>

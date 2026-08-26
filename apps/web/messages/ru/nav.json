@@ -3,6 +3,8 @@
   "dashboards": "Дашборды",
   "workItems": "Задачи",
   "allWorkItems": "Все задачи",
+  "allTickets": "Все тикеты",
+  "searchTickets": "Поиск тикетов…",
   "initiatives": "Инициативы",
   "cycles": "Циклы",
   "notes": "Заметки",
@@ -41,5 +43,6 @@
     "automation": "Автоматизация"
   },
   "godModeOwnerOnly": "Режим администратора доступен только владельцу инстанса.",
-  "project": "Проект"
+  "project": "Проект",
+  "noTickets": "Ничего не найдено"
 }

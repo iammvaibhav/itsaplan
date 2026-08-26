@@ -5,8 +5,10 @@ import {
   issueStatus,
   issueLabel,
   label,
+  projectMember,
   projectColumn,
   issueType,
+  user,
   issueFieldValue,
   issueFieldOption,
   issueAttachment,
@@ -250,6 +252,149 @@ export async function listArchivedIssues(project: ProjectRow): Promise<IssueRow[
   await attachGroupings(issues);
   await attachLoggedMinutes(issues);
   return issues;
+}
+
+// --- Cross-project list (the global All tickets board) ----------------------------
+
+// One label on an AllTicketHit, expanded from its id.
+export interface AllTicketLabel {
+  id: number;
+  name: string;
+  color: string;
+}
+
+// One row of the cross-project list: an active issue with the project it belongs
+// to and the state group of the column it sits in. Everything a global board card
+// renders, without per-project scaffolds: labels, type and assignee arrive
+// expanded so the client needs no lookup tables across projects.
+export interface AllTicketHit {
+  id: number;
+  projectId: number;
+  projectKey: string;
+  projectName: string;
+  sequenceNumber: number;
+  identifier: string;
+  title: string;
+  columnId: number;
+  columnName: string;
+  columnColor: string;
+  // The state group of the issue's column ('backlog' | 'unstarted' | 'started' |
+  // 'completed' | 'canceled'). This is the key the global board groups by:
+  // per-project column names differ, their state groups do not.
+  stateType: string;
+  typeId: number | null;
+  typeName: string | null;
+  typeIcon: string | null;
+  typeColor: string | null;
+  priority: string | null;
+  assigneeUserId: string | null;
+  assigneeName: string | null;
+  assigneeImage: string | null;
+  dueDate: string | null;
+  position: number;
+  updatedAt: string;
+  labels: AllTicketLabel[];
+}
+
+// Every active issue in the projects the user is a member of — the union of the
+// per-project boards behind one read. Membership is the same check the access
+// guard applies per project, expressed as one EXISTS over project_member. Read
+// only by design (ADR 0002 keeps writes per-project): moves go through each
+// project's own PATCH /issues/:id.
+export async function listAllTickets(
+  userId: string,
+  filters: { stateType?: string; query?: string; limit?: number } = {},
+): Promise<AllTicketHit[]> {
+  const conds: SQL[] = [
+    exists(
+      db
+        .select({ one: sql`1` })
+        .from(projectMember)
+        .where(and(eq(projectMember.projectId, issue.projectId), eq(projectMember.userId, userId))),
+    ),
+    isNull(issue.archivedAt),
+  ];
+  if (filters.stateType) conds.push(eq(projectColumn.stateType, filters.stateType));
+  const raw = filters.query?.trim();
+  if (raw) conds.push(ilike(issue.title, `%${escapeLike(raw)}%`));
+
+  const rows = await db
+    .select({
+      id: issue.id,
+      projectId: issue.projectId,
+      projectKey: projectTable.key,
+      projectName: projectTable.name,
+      sequenceNumber: issue.sequenceNumber,
+      title: issue.title,
+      columnId: issue.columnId,
+      columnName: projectColumn.name,
+      columnColor: projectColumn.color,
+      stateType: projectColumn.stateType,
+      typeId: issue.typeId,
+      typeName: issueType.name,
+      typeIcon: issueType.icon,
+      typeColor: issueType.color,
+      priority: issue.priority,
+      assigneeUserId: issue.assigneeUserId,
+      dueDate: issue.dueDate,
+      position: issue.position,
+      updatedAt: issue.updatedAt,
+    })
+    .from(issue)
+    .innerJoin(projectTable, eq(projectTable.id, issue.projectId))
+    .innerJoin(projectColumn, eq(projectColumn.id, issue.columnId))
+    .leftJoin(issueType, eq(issueType.id, issue.typeId))
+    .where(and(...conds))
+    // Grouped by project first, then by the column order within it, so a board
+    // that slices this list into state groups keeps a stable, readable order.
+    .orderBy(projectTable.key, projectColumn.position, issue.position)
+    .limit(Math.min(Math.max(filters.limit ?? 500, 1), 1000));
+
+  // Labels and assignees expand in two follow-up queries rather than joins, which
+  // would multiply rows and re-fetch them per issue.
+  const labelRows = rows.length
+    ? await db
+        .select({
+          issueId: issueLabel.issueId,
+          id: label.id,
+          name: label.name,
+          color: label.color,
+        })
+        .from(issueLabel)
+        .innerJoin(label, eq(label.id, issueLabel.labelId))
+        .where(
+          inArray(
+            issueLabel.issueId,
+            rows.map((r) => r.id),
+          ),
+        )
+    : [];
+  const labelsByIssue = new Map<number, AllTicketLabel[]>();
+  for (const r of labelRows) {
+    let list = labelsByIssue.get(r.issueId);
+    if (!list) labelsByIssue.set(r.issueId, (list = []));
+    list.push({ id: r.id, name: r.name, color: r.color });
+  }
+
+  const assigneeIds = [
+    ...new Set(rows.map((r) => r.assigneeUserId).filter((v): v is string => v != null)),
+  ];
+  const assigneeRows = assigneeIds.length
+    ? await db
+        .select({ id: user.id, name: user.name, image: user.image })
+        .from(user)
+        .where(inArray(user.id, assigneeIds))
+    : [];
+  const assigneeById = new Map(assigneeRows.map((a) => [a.id, a]));
+
+  return rows.map((r) => ({
+    ...r,
+    identifier: `${r.projectKey}-${r.sequenceNumber}`,
+    updatedAt: iso(r.updatedAt),
+    labels: labelsByIssue.get(r.id) ?? [],
+    assigneeName: r.assigneeUserId ? (assigneeById.get(r.assigneeUserId)?.name ?? null) : null,
+    assigneeImage: r.assigneeUserId ? (assigneeById.get(r.assigneeUserId)?.image ?? null) : null,
+  }));
 }
 
 // A light issue result for search and list: the fields the command palette and the

@@ -3,6 +3,8 @@
   "dashboards": "Dashboards",
   "workItems": "Work items",
   "allWorkItems": "All work items",
+  "allTickets": "All tickets",
+  "searchTickets": "Search tickets…",
   "initiatives": "Initiatives",
   "cycles": "Cycles",
   "notes": "Notes",
@@ -41,5 +43,6 @@
     "automation": "Automation"
   },
   "godModeOwnerOnly": "God mode is open to the instance owner only.",
-  "project": "Project"
+  "project": "Project",
+  "noTickets": "No tickets match"
 }

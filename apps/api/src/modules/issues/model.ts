@@ -561,6 +561,52 @@ export const BulkArchivedResponse = t.Object({ archived: t.Number() });
 
 export const BulkDeletedResponse = t.Object({ deleted: t.Number() });
 
+// --- Cross-project list (GET /issues) ---------------------------------------------
+
+// Optional filters for the global list: a column state group and a title
+// substring. limit is optional too (default 500, hard cap 1000).
+export const allTicketsQuery = t.Object({
+  stateType: t.Optional(
+    t.String({ description: 'Filter by the state group of the issue column.' }),
+  ),
+  query: t.Optional(t.String({ description: 'Case-insensitive substring match on the title.' })),
+  limit: t.Optional(t.Numeric({ minimum: 1, maximum: 1000 })),
+});
+
+export const AllTicketLabelResponse = t.Object({
+  id: t.Number(),
+  name: t.String(),
+  color: t.String(),
+});
+
+// AllTicketHit from the service.
+export const AllTicketResponse = t.Object({
+  id: t.Number(),
+  projectId: t.Number(),
+  projectKey: t.String(),
+  projectName: t.String(),
+  sequenceNumber: t.Number(),
+  identifier: t.String(),
+  title: t.String(),
+  columnId: t.Number(),
+  columnName: t.String(),
+  columnColor: t.String(),
+  stateType: t.String(),
+  typeId: t.Nullable(t.Number()),
+  typeName: t.Nullable(t.String()),
+  typeIcon: t.Nullable(t.String()),
+  typeColor: t.Nullable(t.String()),
+  priority: t.Nullable(t.String()),
+  assigneeUserId: t.Nullable(t.String()),
+  assigneeName: t.Nullable(t.String()),
+  assigneeImage: t.Nullable(t.String()),
+  dueDate: t.Nullable(t.String()),
+  position: t.Number(),
+  updatedAt: t.String(),
+  labels: t.Array(AllTicketLabelResponse),
+});
+
+export const AllTicketsResponse = t.Object({ issues: t.Array(AllTicketResponse) });
 export const BoardResponse = t.Object({ issues: t.Array(BoardIssueResponse) });
 
 export const WatchStateResponse = t.Object({ ok: t.Boolean() });

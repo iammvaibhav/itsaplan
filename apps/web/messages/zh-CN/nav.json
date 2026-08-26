@@ -3,6 +3,8 @@
   "dashboards": "仪表盘",
   "workItems": "工作项",
   "allWorkItems": "全部工作项",
+  "allTickets": "全部工单",
+  "searchTickets": "搜索工单…",
   "initiatives": "计划",
   "cycles": "周期",
   "notes": "便签",
@@ -41,5 +43,6 @@
     "automation": "自动化"
   },
   "godModeOwnerOnly": "管理模式仅对实例管理员开放。",
-  "project": "项目"
+  "project": "项目",
+  "noTickets": "没有匹配的工单"
 }

@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Braces, Server, Shield } from 'lucide-react';
+import { Braces, Layers, Server, Shield } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { Project } from '@/lib/api';
 import { useSession } from '@/lib/auth-client';
-import { apiDocsPath, godPath, mcpServerPath } from '@/utils/paths';
+import { apiDocsPath, godPath, mcpServerPath, ticketsPath } from '@/utils/paths';
 import { GOD_SECTIONS } from '@/utils/godSections';
 import { useSettingsNavGroups } from '@/hooks/useSettingsNavGroups';
 import { useSidebarSide } from '@/hooks/useSidebarSide';
@@ -62,6 +62,7 @@ export default function AppSidebar({
   const settingsMode = settingsNav.groups.some((g) => g.items.some((i) => i.active));
   const onApiDocs = pathname.endsWith('/api');
   const onMcp = pathname.endsWith('/mcp');
+  const onTickets = pathname.startsWith(ticketsPath);
   const side = useSidebarSide();
 
   return (
@@ -76,6 +77,18 @@ export default function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent>
+        {/* The one global destination: reachable without a project, so it sits
+            above the project-bound navigation and stays visible in settings
+            mode too. */}
+        <SidebarMenu>
+          <SidebarNavItem
+            href={ticketsPath}
+            icon={Layers}
+            label={t('allTickets')}
+            active={onTickets}
+            disabled={false}
+          />
+        </SidebarMenu>
         {settingsMode ? (
           <SidebarSettingsNav projectKey={currentProjectKey} />
         ) : (

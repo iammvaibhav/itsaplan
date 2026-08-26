@@ -4,6 +4,7 @@ import {
   type BulkIssuePatch,
   type IssueFieldValueEntry,
   type IssueFieldValueInput,
+  type AllTicketsParams,
   type IssuePatch,
   type NewIssueInput,
   type BoardIssue,
@@ -72,6 +73,17 @@ export function useIssueSearchQuery(
     queryKey: qk.issueSearch(projectKey ?? '', term),
     queryFn: () => api.searchIssues(projectKey!, { q: term, limit: 50 }),
     enabled: opts.enabled && projectKey != null && term.length > 0,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// The cross-project All tickets list behind the global board. Read-only: the
+// per-project mutations above never touch this cache — a change to any project's
+// issues simply refetches on the next mount or window focus (default stale time).
+export function useAllTicketsQuery(params: AllTicketsParams) {
+  return useQuery({
+    queryKey: qk.allTickets(params),
+    queryFn: () => api.getAllTickets(params),
     placeholderData: keepPreviousData,
   });
 }
