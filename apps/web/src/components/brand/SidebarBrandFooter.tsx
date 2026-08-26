@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import ItsAPlanMark from '@/components/brand/ItsAPlanMark';
-import UpdatesDialog from '@/components/layout/UpdatesDialog';
 import { useSession } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 import { useAppVersionQuery, useUpdateStatusQuery } from '@/services/updates.service';
+
+const UpdatesDialog = dynamic(() => import('@/components/layout/UpdatesDialog'), { ssr: false });
 
 // The product mark at the bottom of both sidebars, with the running version under
 // it. Collapses to the mark alone when the sidebar is in icon mode.
