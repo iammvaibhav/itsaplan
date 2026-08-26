@@ -39,25 +39,27 @@ export default function AllTicketsBoard() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="relative ms-auto w-64 shrink-0 px-4 pt-3">
-        <Search className="pointer-events-none absolute start-7 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={queryText}
-          onChange={(e) => setQueryText(e.target.value)}
-          placeholder={t('searchTickets')}
-          className="ps-9 pe-8"
-          aria-label={t('searchTickets')}
-        />
-        {queryText && (
-          <button
-            type="button"
-            aria-label={tCommon('clearSearch')}
-            onClick={() => setQueryText('')}
-            className="absolute end-7 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
-        )}
+      <div className="ms-auto w-64 shrink-0 px-4 pt-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={queryText}
+            onChange={(e) => setQueryText(e.target.value)}
+            placeholder={t('searchTickets')}
+            className="ps-9 pe-8"
+            aria-label={t('searchTickets')}
+          />
+          {queryText && (
+            <button
+              type="button"
+              aria-label={tCommon('clearSearch')}
+              onClick={() => setQueryText('')}
+              className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {empty && (

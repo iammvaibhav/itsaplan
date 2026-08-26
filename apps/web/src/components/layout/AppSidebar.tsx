@@ -14,6 +14,8 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarRail,
@@ -80,15 +82,19 @@ export default function AppSidebar({
         {/* The one global destination: reachable without a project, so it sits
             above the project-bound navigation and stays visible in settings
             mode too. */}
-        <SidebarMenu>
-          <SidebarNavItem
-            href={ticketsPath}
-            icon={Layers}
-            label={t('allTickets')}
-            active={onTickets}
-            disabled={false}
-          />
-        </SidebarMenu>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarNavItem
+                href={ticketsPath}
+                icon={Layers}
+                label={t('allTickets')}
+                active={onTickets}
+                disabled={false}
+              />
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
         {settingsMode ? (
           <SidebarSettingsNav projectKey={currentProjectKey} />
         ) : (
