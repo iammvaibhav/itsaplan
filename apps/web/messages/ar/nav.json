@@ -28,6 +28,7 @@
   "integrations": "التكاملات (integrations)",
   "projects": "المشاريع",
   "noProjects": "لا توجد مشاريع بعد",
+  "allProjects": "All projects",
   "newProject": "مشروع جديد",
   "manageProjects": "إدارة المشاريع",
   "role": "الدور: {role}",

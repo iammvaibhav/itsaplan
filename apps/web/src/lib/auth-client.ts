@@ -8,8 +8,18 @@ import { API_URL, markSigningOut } from '@/lib/api';
 // The better-auth handler lives on the backend (Elysia), so baseURL is the API origin.
 // inferAdditionalFields declares the custom `role` column added in @repo/auth so the
 // session user is typed with it (the web app never imports server packages).
+//
+// The `/api/auth` mount is spelled out rather than left to the client's default,
+// because better-auth DROPS its basePath whenever baseURL already carries a path:
+//   const pathname = realBaseURL.n ? "" : realBaseURL.pathname;
+//   const basePath = pathname ? "" : ctx.context.options.basePath || "";
+// So a prefixed API origin (API_URL = https://host:8443/__api, the same-origin
+// rewrite in next.config.ts) silently became the auth base, and every call went to
+// /__api/get-session -> 404 instead of /__api/api/auth/get-session. Appending the
+// mount here is correct for a bare origin too, and matches how lib/api.ts already
+// builds its own sign-out URL.
 export const authClient = createAuthClient({
-  baseURL: API_URL,
+  baseURL: `${API_URL}/api/auth`,
   plugins: [
     inferAdditionalFields({
       user: {

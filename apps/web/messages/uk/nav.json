@@ -28,6 +28,7 @@
   "integrations": "Інтеграції",
   "projects": "Проєкти",
   "noProjects": "Проєктів ще немає",
+  "allProjects": "All projects",
   "newProject": "Новий проєкт",
   "manageProjects": "Керування проєктами",
   "role": "Роль: {role}",

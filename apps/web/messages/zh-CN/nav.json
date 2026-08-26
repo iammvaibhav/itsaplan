@@ -28,6 +28,7 @@
   "integrations": "集成",
   "projects": "项目",
   "noProjects": "暂无项目",
+  "allProjects": "All projects",
   "newProject": "新建项目",
   "manageProjects": "管理项目",
   "role": "角色：{role}",
