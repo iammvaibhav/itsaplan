@@ -8,12 +8,16 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.7.0.1', '10.0.0.237', 'iammvaibhav', 'vaibhav-dev'],
   // standalone build for a lean docker image.
   output: 'standalone',
-  // Monorepo: include the repo root in file tracing for standalone.
+  // Monorepo: include the repo root in file tracing for standalone and turbopack.
   outputFileTracingRoot: path.join(import.meta.dirname, '../../'),
-  // isomorphic-dompurify loads jsdom on the server, and jsdom reads its own data
-  // files (default-stylesheet.css) by a path relative to its module. Bundling it
-  // breaks that path, so it is required from node_modules at runtime instead.
   serverExternalPackages: ['isomorphic-dompurify'],
+  // Single browser origin: page and API share one origin (https://<host>:8443),
+  // so the browser only ever has to accept ONE self-signed certificate. The
+  // prefix is stripped on the way through — :path* lands at the api root — so
+  // /__api/api/auth/* reaches better-auth's handler unchanged.
+  async rewrites() {
+    return [{ source: '/__api/:path*', destination: 'http://127.0.0.1:3000/:path*' }];
+  },
 };
 
 export default createNextIntlPlugin('./src/i18n/request.ts')(nextConfig);
