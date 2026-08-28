@@ -48,6 +48,8 @@ for (const route of ROUTES) {
   });
 
   server.listen(route.listen, '0.0.0.0', () => {
-    console.log(`[tls-proxy:${route.name}] https://0.0.0.0:${route.listen} -> http://127.0.0.1:${route.upstream}`);
+    console.log(
+      `[tls-proxy:${route.name}] https://0.0.0.0:${route.listen} -> http://127.0.0.1:${route.upstream}`,
+    );
   });
 }

@@ -332,6 +332,7 @@
     "assignTo": "الإسناد إلى…",
     "you": "أنت",
     "members": "الأعضاء",
+    "agents": "الوكلاء",
     "delegateTo": "التفويض إلى…",
     "delegateOwnedBy": "بيشتغل لـ {name} بس",
     "delegateOwnedByOther": "بيشتغل لمالكه بس",

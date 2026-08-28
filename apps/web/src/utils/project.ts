@@ -344,14 +344,12 @@ function allGroups(project: ProjectDetail, group: GroupField, labels: GroupLabel
       }));
     case 'assignee':
       return [
-        ...project.assignees
-          .filter((a) => a.kind === 'member')
-          .map((a) => ({
-            key: `a${a.userId}`,
-            name: a.name,
-            assign: patchOnly({ assigneeUserId: a.userId }),
-            values: [a.userId],
-          })),
+        ...project.assignees.map((a) => ({
+          key: `a${a.userId}`,
+          name: a.name,
+          assign: patchOnly({ assigneeUserId: a.userId }),
+          values: [a.userId],
+        })),
         {
           key: 'a-none',
           name: labels.noAssignee,

@@ -174,12 +174,12 @@ export function useIssueCommands(
       },
     });
 
-    if (members.length > 0) {
+    if (members.length > 0 || agents.length > 0) {
       items.push({
         id: 'issue.assignee',
         label: t('assignee'),
         icon: <User />,
-        keywords: 'owner member',
+        keywords: 'owner member agent',
         submenu: {
           heading: t('assignee'),
           placeholder: t('assigneePlaceholder'),
@@ -195,6 +195,13 @@ export function useIssueCommands(
               id: `issue.assignee.${a.userId}`,
               label: a.name,
               icon: <User />,
+              checked: a.userId === issue.assigneeUserId,
+              run: () => patch({ assigneeUserId: a.userId }),
+            })),
+            ...agents.map((a) => ({
+              id: `issue.assignee.${a.userId}`,
+              label: a.name,
+              icon: <Bot />,
               checked: a.userId === issue.assigneeUserId,
               run: () => patch({ assigneeUserId: a.userId }),
             })),

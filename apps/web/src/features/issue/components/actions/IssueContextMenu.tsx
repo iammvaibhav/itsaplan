@@ -190,7 +190,7 @@ export default function IssueContextMenu({
                 </ContextMenuSubContent>
               </ContextMenuSub>
 
-              {members.length > 0 && (
+              {(members.length > 0 || agents.length > 0) && (
                 <ContextMenuSub>
                   <ContextMenuSubTrigger>
                     <User />
@@ -208,6 +208,16 @@ export default function IssueContextMenu({
                         onSelect={() => patch({ assigneeUserId: a.userId })}
                       >
                         <User />
+                        <span className="flex-1 truncate">{a.name}</span>
+                        <SelectedCheck selected={a.userId === issue.assigneeUserId} />
+                      </ContextMenuItem>
+                    ))}
+                    {agents.map((a) => (
+                      <ContextMenuItem
+                        key={a.userId}
+                        onSelect={() => patch({ assigneeUserId: a.userId })}
+                      >
+                        <Bot />
                         <span className="flex-1 truncate">{a.name}</span>
                         <SelectedCheck selected={a.userId === issue.assigneeUserId} />
                       </ContextMenuItem>

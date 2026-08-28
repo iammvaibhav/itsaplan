@@ -169,9 +169,7 @@ export function useFilterFields(projectKey?: string) {
         label: t('fields.assignee'),
         kind: 'set',
         options: [
-          ...project.assignees
-            .filter((a) => a.kind === 'member')
-            .map((a) => ({ value: a.userId, label: a.name })),
+          ...project.assignees.map((a) => ({ value: a.userId, label: a.name })),
           { value: null, label: t('unset.assignee') },
         ],
       },

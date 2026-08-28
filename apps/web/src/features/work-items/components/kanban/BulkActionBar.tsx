@@ -97,7 +97,7 @@ export function BulkActionBar({ project }: { project: ProjectDetail }) {
                 ))}
               </BarMenu>
 
-              {members.length > 0 && (
+              {(members.length > 0 || agents.length > 0) && (
                 <BarMenu
                   icon={<User className="size-4" />}
                   label={t('assignee')}
@@ -113,6 +113,15 @@ export function BulkActionBar({ project }: { project: ProjectDetail }) {
                       onSelect={() => void bulk.patch(ids, { assigneeUserId: a.userId })}
                     >
                       <User />
+                      <span className="flex-1 truncate">{a.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                  {agents.map((a) => (
+                    <DropdownMenuItem
+                      key={a.userId}
+                      onSelect={() => void bulk.patch(ids, { assigneeUserId: a.userId })}
+                    >
+                      <Bot />
                       <span className="flex-1 truncate">{a.name}</span>
                     </DropdownMenuItem>
                   ))}

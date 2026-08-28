@@ -350,7 +350,7 @@ export default function NewIssueModal({
         >
           <StatusSelect columns={project.columns} value={columnId} onChange={setColumnId} />
 
-          {project.assignees.some((a) => a.kind === 'member') && (
+          {project.assignees.length > 0 && (
             <AssigneeSelect
               assignees={project.assignees}
               value={assigneeUserId}

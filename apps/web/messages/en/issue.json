@@ -332,6 +332,7 @@
     "assignTo": "Assign to…",
     "you": "You",
     "members": "Members",
+    "agents": "Agents",
     "delegateTo": "Delegate to…",
     "delegateOwnedBy": "Only runs for {name}",
     "delegateOwnedByOther": "Runs only for its owner",

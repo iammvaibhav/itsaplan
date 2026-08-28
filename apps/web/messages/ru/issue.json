@@ -332,6 +332,7 @@
     "assignTo": "Назначить…",
     "you": "Вы",
     "members": "Участники",
+    "agents": "Агенты",
     "delegateTo": "Делегировать…",
     "delegateOwnedBy": "Работает только для {name}",
     "delegateOwnedByOther": "Работает только для своего владельца",

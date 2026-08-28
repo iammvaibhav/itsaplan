@@ -3,13 +3,13 @@ import type { Assignee } from '@/lib/api';
 import { useSession } from '@/lib/auth-client';
 import Avatar from '@/components/common/Avatar';
 import { Pill } from './Pill';
-import PopoverPick, { type PickItem } from './PopoverPick';
+import PopoverPick from './PopoverPick';
 import { useTranslations } from 'next-intl';
+import { useCandidatePickItem } from '@/features/issue/hooks/useCandidatePickItem';
 
-// The assignee of an issue is a project member. `assignees` is the project's full
-// candidate list (members and agents); this control filters it to members. Agents
-// are set through DelegateSelect instead. The signed-in member is pulled out into a
-// "Team me" group at the top; everyone else falls under "Members".
+// The assignee of an issue is a project member or an AI agent. `assignees` is the project's full
+// candidate list (members and agents). The signed-in member is pulled out into a
+// "You" group at the top; everyone else falls under "Members" or "Agents".
 export default function AssigneeSelect({
   assignees,
   value,
@@ -27,20 +27,13 @@ export default function AssigneeSelect({
   const none = t('noAssignee');
   const { data: session } = useSession();
   const currentUserId = session?.user.id ?? null;
+  const assignee = assignees.find((a) => a.userId === value);
   const members = assignees.filter((a) => a.kind === 'member');
-  const assignee = members.find((a) => a.userId === value);
+  const agents = assignees.filter((a) => a.kind === 'agent');
+  const toItem = useCandidatePickItem(assignees, value, (userId) => onChange(userId));
 
-  const toItem = (a: Assignee): PickItem => ({
-    key: a.userId,
-    search: a.name,
-    icon: <Avatar name={a.name} image={a.image} className="size-4 text-[8px]" />,
-    label: a.name,
-    selected: a.userId === value,
-    onSelect: () => onChange(a.userId),
-  });
   const me = members.find((a) => a.userId === currentUserId);
   const others = members.filter((a) => a.userId !== currentUserId);
-
   return (
     <PopoverPick
       readOnly={readOnly}
@@ -55,7 +48,7 @@ export default function AssigneeSelect({
         </Pill>
       }
       inputPlaceholder={t('assignTo')}
-      emptyText={t('noMembers')}
+      emptyText={t('noCandidates')}
       items={[
         {
           key: 'none',
@@ -68,7 +61,8 @@ export default function AssigneeSelect({
       ]}
       groups={[
         ...(me ? [{ heading: t('you'), items: [toItem(me)] }] : []),
-        { heading: t('members'), items: others.map(toItem) },
+        ...(others.length > 0 ? [{ heading: t('members'), items: others.map(toItem) }] : []),
+        ...(agents.length > 0 ? [{ heading: t('agents'), items: agents.map(toItem) }] : []),
       ]}
     />
   );

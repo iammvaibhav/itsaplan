@@ -332,6 +332,7 @@
     "assignTo": "指派给…",
     "you": "你",
     "members": "成员",
+    "agents": "代理",
     "delegateTo": "委派给…",
     "delegateOwnedBy": "仅为 {name} 运行",
     "delegateOwnedByOther": "仅为其所有者运行",

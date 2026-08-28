@@ -5,7 +5,14 @@ import createNextIntlPlugin from 'next-intl/plugin';
 const nextConfig: NextConfig = {
   // LAN / WireGuard access from the MacBook. Next 16 blocks /_next/static
   // for any origin that is not localhost unless it is listed here.
-  allowedDevOrigins: ['10.7.0.1', '10.0.0.237', 'iammvaibhav', 'vaibhav-dev'],
+  allowedDevOrigins: [
+    '127.0.0.1',
+    'localhost',
+    '10.7.0.1',
+    '10.0.0.237',
+    'iammvaibhav',
+    'vaibhav-dev',
+  ],
   // standalone build for a lean docker image.
   output: 'standalone',
   // Monorepo: include the repo root in file tracing for standalone and turbopack.

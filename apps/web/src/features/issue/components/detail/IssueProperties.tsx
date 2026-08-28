@@ -119,7 +119,7 @@ export default function IssueProperties({
     {
       key: 'groupPeople',
       rows: [
-        hasMembers && (
+        (hasMembers || hasAgents) && (
           <IssuePropertyRow key="assignee" label={t('assignee')}>
             <AssigneeSelect
               assignees={project.assignees}
