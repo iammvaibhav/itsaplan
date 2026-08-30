@@ -153,6 +153,7 @@ export const DEFAULT_COLUMNS: { name: string; stateType: string; color: string }
   { name: 'Backlog', stateType: 'backlog', color: '#71717a' },
   { name: 'Todo', stateType: 'unstarted', color: '#6b7280' },
   { name: 'In Progress', stateType: 'started', color: '#eab308' },
+  { name: 'Ready to review', stateType: 'started', color: '#6b7280' },
   { name: 'Done', stateType: 'completed', color: '#22c55e' },
   { name: 'Canceled', stateType: 'canceled', color: '#ef4444' },
 ];

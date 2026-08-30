@@ -11,12 +11,19 @@ import { addProjectMember } from '#tests/helpers/members';
 // See apps/api/AGENTS.md "Tests" for the setup.
 //
 // The projects feature owns five routes: list, create, copy, the full work-items
-// view, and delete. createProject seeds five default columns (one per state type)
-// and a default "Member" role; it seeds no issue types or assignees.
+// view, and delete. createProject seeds default columns (one per state type plus
+// Ready to review) and a default "Member" role; it seeds no issue types or assignees.
 
-// createProject seeds one column per state type; a new project always has these
-// five and nothing else.
-const DEFAULT_COLUMN_NAMES = ['Backlog', 'Todo', 'In Progress', 'Done', 'Canceled'];
+// createProject seeds default columns; a new project starts with these
+// six and nothing else.
+const DEFAULT_COLUMN_NAMES = [
+  'Backlog',
+  'Todo',
+  'In Progress',
+  'Ready to review',
+  'Done',
+  'Canceled',
+];
 
 // Registers a user and returns a Treaty client acting as them.
 async function signUpClient() {
@@ -59,7 +66,7 @@ describe('projects', () => {
       expect(created.data).toMatchObject({ description: 'Growth work' });
     });
 
-    it('seeds the five default columns', async () => {
+    it('seeds the default columns', async () => {
       const { api } = await signUpClient();
       await api.projects.post({ key: 'MKT', name: 'Marketing' });
 
