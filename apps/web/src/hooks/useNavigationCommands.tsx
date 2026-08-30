@@ -4,6 +4,7 @@ import {
   Braces,
   FolderKanban,
   Inbox,
+  Layers,
   LayoutDashboard,
   Server,
   Shield,
@@ -26,6 +27,7 @@ import {
   membersPath,
   notificationsPath,
   projectPath,
+  ticketsPath,
 } from '@/utils/paths';
 import { ACCOUNT_SECTIONS, accountPath } from '@/utils/accountSections';
 import { AI_SECTIONS, AI_TEAM_SECTIONS } from '@/utils/settingsSections';
@@ -63,6 +65,7 @@ export function useNavigationCommands(projectKey: string | null): CommandSection
   function add(id: string, label: string, icon: Command['icon'], href: string, keywords?: string) {
     items.push({ id, label, icon, keywords, run: () => router.push(href) });
   }
+  add('nav.all-tickets', t('allTickets'), <Layers />, ticketsPath, 'tickets work items all issues');
 
   if (projectKey) {
     const key = projectKey;

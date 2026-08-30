@@ -22,7 +22,7 @@ import { useActionsQuery } from '@/services/actions.service';
 import { useIssueQuery, useRestoreIssue, useUpdateIssue } from '@/services/issues.service';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSession } from '@/lib/auth-client';
-import { useShell } from '@/context/shellContext';
+import { useShellOptional } from '@/context/shellContext';
 import { colorDot } from '@/components/common/fields/colorDot';
 import { useFormatter, useTranslations } from 'next-intl';
 import { PRIORITY_FIELDS } from '@/components/common/fields/priorityFields';
@@ -56,7 +56,8 @@ export function useIssueCommands(
   const format = useFormatter();
   const priorityLabel = usePriorityLabel();
   const presetLabel = useDueDatePresetLabel();
-  const { onOpenIssue } = useShell();
+  const shell = useShellOptional();
+  const onOpenIssue = shell?.onOpenIssue;
   const { data: session } = useSession();
   const projectKey = project?.project.key ?? null;
   const issueQuery = useIssueQuery(issueId);
@@ -117,14 +118,14 @@ export function useIssueCommands(
       label: t('preview'),
       icon: <PanelRight />,
       keywords: 'open panel side',
-      run: () => onOpenIssue(issue.id, 'panel'),
+      run: () => onOpenIssue?.(issue.id, 'panel'),
     },
     {
       id: 'issue.open',
       label: t('goToIssue'),
       icon: <SquareArrowOutUpRight />,
       keywords: 'open page full',
-      run: () => onOpenIssue(issue.id, 'page'),
+      run: () => onOpenIssue?.(issue.id, 'page'),
     },
   ];
 

@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useProjectsQuery } from '@/services/projects.service';
 import { projectPath } from '@/utils/paths';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import AppSidebar from '@/components/layout/AppSidebar';
 import AppHeader from '@/components/layout/AppHeader';
+import CommandLayer from '@/components/layout/CommandLayer';
 import NewProjectModal from '@/components/layout/NewProjectModal';
 import AllTicketsBoard from '@/features/work-items/components/all-tickets/AllTicketsBoard';
 
@@ -21,7 +23,21 @@ export default function TicketsPage() {
   const router = useRouter();
   const { data: projects } = useProjectsQuery();
   const [creating, setCreating] = useState(false);
+  const [showCommand, setShowCommand] = useState(false);
 
+  useKeyboardShortcuts({
+    hasProject: false,
+    hasChat: false,
+    projects: projects ?? [],
+    overlayOpen: showCommand || creating,
+    onToggleCommand: () => setShowCommand((v) => !v),
+    onSelectProject: (key) => router.push(projectPath(key)),
+    onChangeView: () => {},
+    onNewIssue: () => {},
+    onNewProject: () => setCreating(true),
+    onSettings: () => {},
+    onToggleChat: () => {},
+  });
   return (
     <SidebarProvider className="h-svh overflow-hidden">
       <AppSidebar
@@ -34,7 +50,7 @@ export default function TicketsPage() {
         <AppHeader
           title={t('allTickets')}
           hasProject={false}
-          onOpenCommand={() => {}}
+          onOpenCommand={() => setShowCommand(true)}
           onNewIssue={() => {}}
           chatActive={false}
           onToggleChat={() => {}}
@@ -43,6 +59,24 @@ export default function TicketsPage() {
           <AllTicketsBoard />
         </div>
       </SidebarInset>
+
+      <CommandLayer
+        open={showCommand}
+        onOpenChange={setShowCommand}
+        projects={projects ?? []}
+        currentProjectKey={null}
+        onBoard={false}
+        view="kanban"
+        currentIssueId={null}
+        onViewChange={() => {}}
+        onNewIssue={() => {}}
+        onSelectAll={() => {}}
+        onNewProject={() => setCreating(true)}
+        onSelectProject={(key) => router.push(projectPath(key))}
+        onOpenIssue={() => {}}
+        onIssueDeleted={() => {}}
+        onToggleChat={() => {}}
+      />
 
       {creating && (
         <NewProjectModal

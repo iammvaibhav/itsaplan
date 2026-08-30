@@ -26,3 +26,7 @@ export function useShell(): ShellContext {
   if (!ctx) throw new Error('useShell must be used within the project Shell');
   return ctx;
 }
+
+export function useShellOptional(): ShellContext | null {
+  return useContext(ShellCtx);
+}

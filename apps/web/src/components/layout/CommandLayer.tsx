@@ -1,7 +1,7 @@
 import type { Project } from '@/lib/api';
 import type { WorkItemsView } from '@/utils/viewTypes';
 import type { CommandSection } from '@/utils/commands';
-import { useShell } from '@/context/shellContext';
+import { useShellOptional } from '@/context/shellContext';
 import { useAppCommands } from '@/hooks/useAppCommands';
 import { useNavigationCommands } from '@/hooks/useNavigationCommands';
 import { useIssueCommands } from '@/features/issue/hooks/useIssueCommands';
@@ -48,7 +48,8 @@ export default function CommandLayer({
   onIssueDeleted: () => void;
   onToggleChat: () => void;
 }) {
-  const { project } = useShell();
+  const shell = useShellOptional();
+  const project = shell?.project ?? null;
   const hasProject = !!project;
 
   const issue = useIssueCommands(project, currentIssueId, onIssueDeleted);
