@@ -11,30 +11,31 @@ import AppSidebar from '@/components/layout/AppSidebar';
 import AppHeader from '@/components/layout/AppHeader';
 import CommandLayer from '@/components/layout/CommandLayer';
 import NewProjectModal from '@/components/layout/NewProjectModal';
+import NewIssueModal from '@/features/issue/components/create/NewIssueModal';
 import AllTicketsBoard from '@/features/work-items/components/all-tickets/AllTicketsBoard';
 
 // The global All tickets board. A top-level route on purpose: it must be
 // reachable without picking a project first, so it renders the app chrome (the
 // sidebar, with its project switcher) directly instead of living under the
-// project Shell at /project/[projectKey]. The header's project-bound buttons
-// (new issue, chat) are inert here — hasProject is false.
+// project Shell at /project/[projectKey].
 export default function TicketsPage() {
   const t = useTranslations('nav');
   const router = useRouter();
   const { data: projects } = useProjectsQuery();
-  const [creating, setCreating] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [creatingIssue, setCreatingIssue] = useState(false);
   const [showCommand, setShowCommand] = useState(false);
 
   useKeyboardShortcuts({
     hasProject: false,
     hasChat: false,
     projects: projects ?? [],
-    overlayOpen: showCommand || creating,
+    overlayOpen: showCommand || creatingProject || creatingIssue,
     onToggleCommand: () => setShowCommand((v) => !v),
     onSelectProject: (key) => router.push(projectPath(key)),
     onChangeView: () => {},
-    onNewIssue: () => {},
-    onNewProject: () => setCreating(true),
+    onNewIssue: () => setCreatingIssue(true),
+    onNewProject: () => setCreatingProject(true),
     onSettings: () => {},
     onToggleChat: () => {},
   });
@@ -44,14 +45,14 @@ export default function TicketsPage() {
         projects={projects ?? []}
         currentProjectKey={null}
         onSelectProject={(key) => router.push(projectPath(key))}
-        onNewProject={() => setCreating(true)}
+        onNewProject={() => setCreatingProject(true)}
       />
       <SidebarInset className="min-w-0">
         <AppHeader
           title={t('allTickets')}
           hasProject={false}
           onOpenCommand={() => setShowCommand(true)}
-          onNewIssue={() => {}}
+          onNewIssue={() => setCreatingIssue(true)}
           chatActive={false}
           onToggleChat={() => {}}
         />
@@ -69,21 +70,32 @@ export default function TicketsPage() {
         view="kanban"
         currentIssueId={null}
         onViewChange={() => {}}
-        onNewIssue={() => {}}
+        onNewIssue={() => setCreatingIssue(true)}
         onSelectAll={() => {}}
-        onNewProject={() => setCreating(true)}
+        onNewProject={() => setCreatingProject(true)}
         onSelectProject={(key) => router.push(projectPath(key))}
         onOpenIssue={() => {}}
         onIssueDeleted={() => {}}
         onToggleChat={() => {}}
       />
 
-      {creating && (
+      {creatingProject && (
         <NewProjectModal
-          onClose={() => setCreating(false)}
+          onClose={() => setCreatingProject(false)}
           onCreated={(key) => {
-            setCreating(false);
+            setCreatingProject(false);
             router.push(projectPath(key));
+          }}
+        />
+      )}
+
+      {creatingIssue && (
+        <NewIssueModal
+          projects={projects ?? []}
+          defaults={{}}
+          onClose={() => setCreatingIssue(false)}
+          onCreated={() => {
+            setCreatingIssue(false);
           }}
         />
       )}

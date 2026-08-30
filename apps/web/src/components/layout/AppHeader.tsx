@@ -33,7 +33,7 @@ export default function AppHeader({
   const paletteKey = useHotkeyLabel('palette.toggle');
   const newIssueKey = useHotkeyLabel('issue.new');
   const chatKey = useHotkeyLabel('chat.toggle');
-  const canCreateIssue = hasProject && can('work_items', 'create');
+  const canCreateIssue = hasProject ? can('work_items', 'create') : true;
   const canUseChat = hasProject && can('ai_agents', 'read');
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-2 sm:px-4">

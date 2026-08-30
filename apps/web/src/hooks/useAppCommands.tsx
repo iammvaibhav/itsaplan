@@ -72,7 +72,7 @@ export function useAppCommands({
   }
 
   const generalItems: Command[] = [];
-  if (hasProject && can('work_items', 'create')) {
+  if (hasProject ? can('work_items', 'create') : true) {
     generalItems.push({
       id: 'general.new-issue',
       label: tPalette('newIssue'),

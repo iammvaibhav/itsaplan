@@ -77,7 +77,7 @@ export function useKeyboardShortcuts(opts: {
           }
         }
       }
-      if (hasProject && matches(e, 'issue.new')) {
+      if (matches(e, 'issue.new')) {
         e.preventDefault();
         onNewIssue();
         return;

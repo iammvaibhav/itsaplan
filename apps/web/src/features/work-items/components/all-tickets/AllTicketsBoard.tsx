@@ -1,32 +1,39 @@
 'use client';
 
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { DndContext } from '@dnd-kit/core';
+import { DndContext, type DragStartEvent, type DragEndEvent } from '@dnd-kit/core';
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Eye, Search, X } from 'lucide-react';
 import {
+  api,
   type AllTicket,
+  type AllTickets,
   type BoardIssue,
   type Column,
+  type IssuePatch,
   type IssueType,
   type Label,
   type Assignee,
   type ProjectDetail,
 } from '@/lib/api';
+import { useDndSensors } from '@/lib/dnd';
 import { issuePath } from '@/utils/paths';
 import { defaultViewSettings } from '@/utils/viewSettings';
-import { type Maps, type IssueGroup, DEFAULT_COLOR } from '@/utils/project';
-import { boardCollision } from '../../utils/kanban';
-import { STATE_TYPE_ORDER } from '../../utils/allTickets';
+import { positionsAt, type Maps, type IssueGroup, DEFAULT_COLOR } from '@/utils/project';
+import { boardCollision, draggedIds, issuesToMove, type BoardDropData } from '../../utils/kanban';
+import { compareColumns, type ColumnMeta } from '../../utils/allTickets';
 import { useAllTicketsQuery } from '@/services/issues.service';
-import { useProjectQuery } from '@/services/projects.service';
+import { useProjectQuery, useProjectsQuery } from '@/services/projects.service';
 import { useCycleOptionsQuery } from '@/services/cycles.service';
+import { qk } from '@/services/queryKeys';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { BoardColumn } from '../kanban/BoardColumn';
 import { CollapsedColumn } from '../kanban/CollapsedColumn';
+import { CardOverlay } from '../kanban/CardOverlay';
 import { GroupDot } from '../shared/GroupDot';
 import { SelectionProvider } from '../../context/useSelection';
 import IssueDetail from '@/features/issue/components/detail/IssueDetail';
@@ -69,19 +76,83 @@ function ticketToBoardIssue(ticket: AllTicket): BoardIssue {
   };
 }
 
-// The global All tickets board: renders columns across state groups (backlog,
-// unstarted, started, completed, canceled) with the project board column chrome
-// and card presentation. Clicking a card opens the issue in a side panel.
+// The global All tickets board: renders columns grouped by column name across
+// projects, ordered deterministically by state type lifecycle rank, column position,
+// and name. Dropping a ticket moves it to the column of that name in its own project.
 export default function AllTicketsBoard() {
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
   const tWorkItems = useTranslations('workItems');
-  const tDisplay = useTranslations('display.stateTypes');
   const [queryText, setQueryText] = useState('');
   const deferredQuery = useDeferredValue(queryText.trim());
   const { data, isPending } = useAllTicketsQuery(deferredQuery ? { query: deferredQuery } : {});
 
   const rawTickets = useMemo(() => data?.issues ?? [], [data]);
+
+  const { data: projects } = useProjectsQuery();
+  const projectQueries = useQueries({
+    queries: (projects ?? []).map((p) => ({
+      queryKey: qk.project(p.key),
+      queryFn: () => api.getProject(p.key),
+      staleTime: 1000 * 60 * 5,
+    })),
+  });
+
+  const { columnsByProjectKey, knownColumns } = useMemo(() => {
+    const byProjectKey = new Map<string, Column[]>();
+    const colMap = new Map<string, ColumnMeta>();
+
+    for (let i = 0; i < (projects ?? []).length; i++) {
+      const p = projects![i];
+      const scaffold = projectQueries[i]?.data;
+      if (scaffold?.columns) {
+        byProjectKey.set(p.key, scaffold.columns);
+        for (const col of scaffold.columns) {
+          if (!colMap.has(col.name)) {
+            colMap.set(col.name, {
+              name: col.name,
+              stateType: col.stateType,
+              position: col.position,
+              color: col.color,
+            });
+          }
+        }
+      }
+    }
+
+    for (const t of rawTickets) {
+      if (!byProjectKey.has(t.projectKey)) {
+        byProjectKey.set(t.projectKey, []);
+      }
+      const list = byProjectKey.get(t.projectKey)!;
+      if (!list.some((c) => c.id === t.columnId)) {
+        list.push({
+          id: t.columnId,
+          projectId: t.projectId,
+          name: t.columnName,
+          color: t.columnColor,
+          stateType: t.stateType,
+          position: t.position,
+          wipLimit: null,
+          wipMode: 'soft',
+          autoAssignUserId: null,
+        });
+      }
+      if (!colMap.has(t.columnName)) {
+        colMap.set(t.columnName, {
+          name: t.columnName,
+          stateType: t.stateType,
+          position: t.position,
+          color: t.columnColor,
+        });
+      }
+    }
+
+    return {
+      columnsByProjectKey: byProjectKey,
+      knownColumns: Array.from(colMap.values()),
+    };
+  }, [projects, projectQueries, rawTickets]);
 
   const [hiddenGroups, setHiddenGroups] = useState<string[]>([]);
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
@@ -105,15 +176,16 @@ export default function AllTicketsBoard() {
   };
 
   const groups: IssueGroup[] = useMemo(() => {
-    return STATE_TYPE_ORDER.map((stateType) => ({
-      key: stateType,
-      name: tDisplay(stateType),
-      stateType,
-      color: DEFAULT_COLOR,
+    const sorted = [...knownColumns].sort(compareColumns);
+    return sorted.map((col) => ({
+      key: col.name,
+      name: col.name,
+      stateType: col.stateType,
+      color: col.color || DEFAULT_COLOR,
       assign: null,
-      values: [stateType],
+      values: [col.name],
     }));
-  }, [tDisplay]);
+  }, [knownColumns]);
 
   const allBoardIssues = useMemo(() => rawTickets.map(ticketToBoardIssue), [rawTickets]);
 
@@ -121,8 +193,12 @@ export default function AllTicketsBoard() {
     const map = new Map<string, BoardIssue[]>();
     for (const group of groups) map.set(group.key, []);
     for (const ticket of rawTickets) {
-      const list = map.get(ticket.stateType);
-      if (list) list.push(ticketToBoardIssue(ticket));
+      const list = map.get(ticket.columnName);
+      if (list) {
+        list.push(ticketToBoardIssue(ticket));
+      } else {
+        map.set(ticket.columnName, [ticketToBoardIssue(ticket)]);
+      }
     }
     return map;
   }, [groups, rawTickets]);
@@ -234,6 +310,102 @@ export default function AllTicketsBoard() {
 
   const empty = !isPending && rawTickets.length === 0 && !deferredQuery;
 
+  const [active, setActive] = useState<{ id: number; count: number } | null>(null);
+  const sensors = useDndSensors(false);
+
+  const onDragStart = useCallback((e: DragStartEvent) => {
+    setActive({ id: Number(e.active.id), count: draggedIds(e.active).length });
+  }, []);
+
+  const onDragCancel = useCallback(() => {
+    setActive(null);
+  }, []);
+
+  const onDragEnd = useCallback((e: DragEndEvent) => {
+    setActive(null);
+    const data = e.over?.data.current as BoardDropData | undefined;
+    data?.onDrop(draggedIds(e.active));
+  }, []);
+
+  const qc = useQueryClient();
+  const updateMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: number; projectKey: string; patch: IssuePatch }) =>
+      api.updateIssue(id, patch),
+    onSettled: (_data, _err, vars) => {
+      void qc.invalidateQueries({ queryKey: ['allTickets'] });
+      if (vars?.projectKey) {
+        void qc.invalidateQueries({ queryKey: qk.boardIssues(vars.projectKey) });
+      }
+      if (vars?.id) {
+        void qc.invalidateQueries({ queryKey: qk.issue(vars.id) });
+        void qc.invalidateQueries({ queryKey: qk.feed(vars.id) });
+      }
+    },
+  });
+
+  const moveIssue = useCallback(
+    (issueIds: number[], group: IssueGroup, index: number) => {
+      const targetIssues = issuesByGroup.get(group.key) ?? [];
+      const idsToMove = issuesToMove(issueIds, allBoardIssues, targetIssues, true);
+      if (idsToMove.length === 0) return;
+
+      const positions = positionsAt(targetIssues, index, idsToMove.length);
+
+      // Optimistically update TanStack Query cache for allTickets
+      qc.setQueriesData({ queryKey: ['allTickets'] }, (old: AllTickets | undefined) => {
+        if (!old) return old;
+        const movedMap = new Map<number, { column: Column; position: number }>();
+        idsToMove.forEach((id, n) => {
+          const t = old.issues.find((item) => item.id === id);
+          if (!t) return;
+          const projectCols = columnsByProjectKey.get(t.projectKey) ?? [];
+          const targetCol =
+            projectCols.find((c) => c.name.toLowerCase() === group.name.toLowerCase()) ??
+            projectCols.find((c) => c.stateType === group.stateType);
+          if (targetCol) {
+            movedMap.set(id, { column: targetCol, position: positions[n] });
+          }
+        });
+
+        return {
+          ...old,
+          issues: old.issues.map((t) => {
+            const moved = movedMap.get(t.id);
+            if (!moved) return t;
+            return {
+              ...t,
+              columnId: moved.column.id,
+              columnName: moved.column.name,
+              columnColor: moved.column.color,
+              stateType: moved.column.stateType,
+              position: moved.position,
+            };
+          }),
+        };
+      });
+
+      // Dispatch mutations
+      idsToMove.forEach((id, n) => {
+        const ticket = rawTickets.find((t) => t.id === id);
+        if (!ticket) return;
+        const projectCols = columnsByProjectKey.get(ticket.projectKey) ?? [];
+        const targetCol =
+          projectCols.find((c) => c.name.toLowerCase() === group.name.toLowerCase()) ??
+          projectCols.find((c) => c.stateType === group.stateType);
+        if (!targetCol) return;
+        updateMutation.mutate({
+          id: ticket.id,
+          projectKey: ticket.projectKey,
+          patch: {
+            columnId: targetCol.id,
+            position: positions[n],
+          },
+        });
+      });
+    },
+    [issuesByGroup, allBoardIssues, qc, columnsByProjectKey, rawTickets, updateMutation],
+  );
+
   return (
     <SelectionProvider validIds={validIds}>
       <div className="flex h-full flex-col">
@@ -276,7 +448,13 @@ export default function AllTicketsBoard() {
         )}
 
         {!empty && (!isPending || rawTickets.length > 0) && (
-          <DndContext collisionDetection={boardCollision}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={boardCollision}
+            onDragStart={onDragStart}
+            onDragCancel={onDragCancel}
+            onDragEnd={onDragEnd}
+          >
             <div className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto p-4">
               {orderedGroups.map((group) =>
                 collapsedSet.has(group.key) ? (
@@ -299,11 +477,11 @@ export default function AllTicketsBoard() {
                     issues={issuesByGroup.get(group.key) ?? []}
                     maps={maps}
                     properties={KANBAN_PROPERTIES}
-                    manualOrder={false}
+                    manualOrder={true}
                     wip={null}
                     filtered={!!deferredQuery}
                     boardIssues={allBoardIssues}
-                    onMoveIssue={() => {}}
+                    onMoveIssue={moveIssue}
                     onOpenIssue={setSelectedIssueId}
                     onAddIssue={() => {}}
                     onHide={() => setHidden(group.key, true)}
@@ -354,6 +532,13 @@ export default function AllTicketsBoard() {
                 </div>
               )}
             </div>
+            <CardOverlay
+              activeId={active?.id ?? null}
+              count={active?.count ?? 0}
+              issues={allBoardIssues}
+              maps={maps}
+              properties={KANBAN_PROPERTIES}
+            />
           </DndContext>
         )}
 

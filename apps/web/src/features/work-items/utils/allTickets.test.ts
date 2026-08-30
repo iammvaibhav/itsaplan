@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 // @ts-expect-error vitest is provided at workspace level
 import { describe, it } from 'vitest';
-import type { AllTicket } from '@/lib/api';
-import { groupTicketsByStateType, STATE_TYPE_ORDER } from './allTickets';
+import type { AllTicket, StateType } from '@/lib/api';
+import {
+  groupTicketsByColumnName,
+  compareColumns,
+  STATE_TYPE_ORDER,
+  type ColumnMeta,
+} from './allTickets';
 
-function ticket(stateType: AllTicket['stateType'], title = 'T'): AllTicket {
+function ticket(columnName: string, stateType: StateType, title = 'T', position = 0): AllTicket {
   return {
     id: 1,
     projectId: 1,
@@ -14,7 +19,7 @@ function ticket(stateType: AllTicket['stateType'], title = 'T'): AllTicket {
     identifier: 'MKT-1',
     title,
     columnId: 10,
-    columnName: 'Column',
+    columnName,
     columnColor: '#000000',
     stateType,
     typeId: null,
@@ -26,34 +31,39 @@ function ticket(stateType: AllTicket['stateType'], title = 'T'): AllTicket {
     assigneeName: null,
     assigneeImage: null,
     dueDate: null,
-    position: 0,
+    position,
     updatedAt: '2026-01-01T00:00:00.000Z',
     labels: [],
   };
 }
 
-describe('groupTicketsByStateType', () => {
-  it('groups by state group in display order', () => {
-    const groups = groupTicketsByStateType([
-      ticket('started', 's1'),
-      ticket('backlog', 'b1'),
-      ticket('completed', 'c1'),
-      ticket('started', 's2'),
+describe('groupTicketsByColumnName', () => {
+  it('groups by column name in deterministic lifecycle order, keeping In Progress and Ready to review separate', () => {
+    const groups = groupTicketsByColumnName([
+      ticket('Ready to review', 'started', 'r1', 5),
+      ticket('Backlog', 'backlog', 'b1', 0),
+      ticket('Done', 'completed', 'd1', 3),
+      ticket('In Progress', 'started', 'p1', 2),
+      ticket('Todo', 'unstarted', 't1', 1),
+      ticket('Canceled', 'canceled', 'c1', 4),
     ]);
     assert.deepEqual(
-      groups.map((g) => [g.stateType, g.tickets.map((t) => t.title)]),
+      groups.map((g) => [g.name, g.stateType, g.tickets.map((t) => t.title)]),
       [
-        ['backlog', ['b1']],
-        ['started', ['s1', 's2']],
-        ['completed', ['c1']],
+        ['Backlog', 'backlog', ['b1']],
+        ['Todo', 'unstarted', ['t1']],
+        ['In Progress', 'started', ['p1']],
+        ['Ready to review', 'started', ['r1']],
+        ['Done', 'completed', ['d1']],
+        ['Canceled', 'canceled', ['c1']],
       ],
     );
   });
 
-  it('keeps input order within a group', () => {
-    const groups = groupTicketsByStateType([
-      ticket('unstarted', 'first'),
-      ticket('unstarted', 'second'),
+  it('keeps input order within a column group', () => {
+    const groups = groupTicketsByColumnName([
+      ticket('Todo', 'unstarted', 'first', 1),
+      ticket('Todo', 'unstarted', 'second', 1),
     ]);
     assert.deepEqual(
       groups[0]!.tickets.map((t) => t.title),
@@ -61,28 +71,53 @@ describe('groupTicketsByStateType', () => {
     );
   });
 
-  it('drops empty groups and unknown state groups', () => {
-    const groups = groupTicketsByStateType([ticket('canceled')]);
+  it('drops empty groups by default', () => {
+    const groups = groupTicketsByColumnName([ticket('Canceled', 'canceled', 'c1', 4)]);
     assert.equal(groups.length, 1);
+    assert.equal(groups[0]!.name, 'Canceled');
     assert.equal(groups[0]!.stateType, 'canceled');
-    // A state value outside the known set has no lane to land in.
-    const rogue = { ...ticket('started'), stateType: 'nonsense' as AllTicket['stateType'] };
-    assert.deepEqual(groupTicketsByStateType([rogue]), []);
   });
-  it('includes empty groups when requested', () => {
-    const groups = groupTicketsByStateType([ticket('started', 's1')], {
+
+  it('includes empty groups when requested with knownColumns', () => {
+    const knownColumns: ColumnMeta[] = [
+      { name: 'Backlog', stateType: 'backlog', position: 0 },
+      { name: 'Todo', stateType: 'unstarted', position: 1 },
+      { name: 'In Progress', stateType: 'started', position: 2 },
+      { name: 'Ready to review', stateType: 'started', position: 5 },
+      { name: 'Done', stateType: 'completed', position: 3 },
+      { name: 'Canceled', stateType: 'canceled', position: 4 },
+    ];
+    const groups = groupTicketsByColumnName([ticket('In Progress', 'started', 'p1', 2)], {
       includeEmpty: true,
+      knownColumns,
     });
-    assert.equal(groups.length, 5);
+    assert.equal(groups.length, 6);
     assert.deepEqual(
-      groups.map((g) => [g.stateType, g.tickets.length]),
+      groups.map((g) => [g.name, g.tickets.length]),
       [
-        ['backlog', 0],
-        ['unstarted', 0],
-        ['started', 1],
-        ['completed', 0],
-        ['canceled', 0],
+        ['Backlog', 0],
+        ['Todo', 0],
+        ['In Progress', 1],
+        ['Ready to review', 0],
+        ['Done', 0],
+        ['Canceled', 0],
       ],
+    );
+  });
+
+  it('orders columns deterministically by stateType rank, then position, then name', () => {
+    const cols: ColumnMeta[] = [
+      { name: 'Done', stateType: 'completed', position: 3 },
+      { name: 'Ready to review', stateType: 'started', position: 5 },
+      { name: 'In Progress', stateType: 'started', position: 2 },
+      { name: 'Backlog', stateType: 'backlog', position: 0 },
+      { name: 'Todo', stateType: 'unstarted', position: 1 },
+      { name: 'Canceled', stateType: 'canceled', position: 4 },
+    ];
+    const sorted = [...cols].sort(compareColumns);
+    assert.deepEqual(
+      sorted.map((c) => c.name),
+      ['Backlog', 'Todo', 'In Progress', 'Ready to review', 'Done', 'Canceled'],
     );
   });
 

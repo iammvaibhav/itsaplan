@@ -131,6 +131,7 @@ function invalidateGroupings(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: qk.anyInitiatives });
   void qc.invalidateQueries({ queryKey: qk.anyCycle });
   void qc.invalidateQueries({ queryKey: qk.anyCycles });
+  void qc.invalidateQueries({ queryKey: qk.anyAllTickets });
 }
 
 // Deletes an issue. Drops it from the project detail immediately and discards its
@@ -257,6 +258,7 @@ export function useSetFieldValue(projectKey: string | null) {
       void qc.invalidateQueries({ queryKey: qk.issue(issueId) });
       void qc.invalidateQueries({ queryKey: qk.feed(issueId) });
       if (projectKey) void qc.invalidateQueries({ queryKey: qk.boardIssues(projectKey) });
+      void qc.invalidateQueries({ queryKey: qk.anyAllTickets });
     },
   });
 }
