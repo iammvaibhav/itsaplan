@@ -18,19 +18,23 @@ export interface TicketStateGroup {
   tickets: AllTicket[];
 }
 
-// Groups the cross-project list by its column state group. A group with no
-// tickets is left out entirely (a member of no project's backlog should not
-// see an empty Backlog lane), and unknown state groups are dropped rather
-// than invented into lanes the UI has no label or icon for.
-export function groupTicketsByStateType(tickets: AllTicket[]): TicketStateGroup[] {
+// Groups the cross-project list by its column state group. By default only
+// non-empty groups are returned; pass includeEmpty: true to include all known
+// state groups in display order. Unknown state groups are dropped.
+export function groupTicketsByStateType(
+  tickets: AllTicket[],
+  options?: { includeEmpty?: boolean },
+): TicketStateGroup[] {
   const byState = new Map<StateType, AllTicket[]>();
   for (const ticket of tickets) {
+    if (!STATE_TYPE_ORDER.includes(ticket.stateType)) continue;
     const list = byState.get(ticket.stateType);
     if (list) list.push(ticket);
     else byState.set(ticket.stateType, [ticket]);
   }
-  return STATE_TYPE_ORDER.filter((s) => byState.has(s)).map((stateType) => ({
+  const filterFn = options?.includeEmpty ? () => true : (s: StateType) => byState.has(s);
+  return STATE_TYPE_ORDER.filter(filterFn).map((stateType) => ({
     stateType,
-    tickets: byState.get(stateType)!,
+    tickets: byState.get(stateType) ?? [],
   }));
 }

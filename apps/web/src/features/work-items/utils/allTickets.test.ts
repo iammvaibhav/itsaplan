@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+// @ts-expect-error vitest is provided at workspace level
+import { describe, it } from 'vitest';
 import type { AllTicket } from '@/lib/api';
 import { groupTicketsByStateType, STATE_TYPE_ORDER } from './allTickets';
 
@@ -67,6 +68,22 @@ describe('groupTicketsByStateType', () => {
     // A state value outside the known set has no lane to land in.
     const rogue = { ...ticket('started'), stateType: 'nonsense' as AllTicket['stateType'] };
     assert.deepEqual(groupTicketsByStateType([rogue]), []);
+  });
+  it('includes empty groups when requested', () => {
+    const groups = groupTicketsByStateType([ticket('started', 's1')], {
+      includeEmpty: true,
+    });
+    assert.equal(groups.length, 5);
+    assert.deepEqual(
+      groups.map((g) => [g.stateType, g.tickets.length]),
+      [
+        ['backlog', 0],
+        ['unstarted', 0],
+        ['started', 1],
+        ['completed', 0],
+        ['canceled', 0],
+      ],
+    );
   });
 
   it('orders every known state group', () => {
