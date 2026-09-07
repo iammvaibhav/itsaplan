@@ -12,6 +12,7 @@ import { SyncProvider } from '@/context/syncContext';
 import { Toaster } from '@/components/ui/sonner';
 import PreferencesSync from '@/components/preferences-sync';
 import SessionScope from '@/components/session-scope';
+import PaseoEmbedBridge from '@/components/embed-bridge';
 
 // The message shown for a failed mutation: the API's `{ error }` text (carried by
 // ApiError) when present, otherwise a generic fallback.
@@ -63,6 +64,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <Direction.Provider dir={dir}>
         <SessionScope />
         <PreferencesSync />
+        <PaseoEmbedBridge />
         <SyncProvider>
           <HotkeysProvider>{children}</HotkeysProvider>
         </SyncProvider>
