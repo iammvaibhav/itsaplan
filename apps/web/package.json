@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 3001",
     "build": "next build",
-    "start": "next start -H 0.0.0.0 -p 3001",
+    "start": "./scripts/start-production.sh",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
