@@ -3,7 +3,8 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, type Project } from '@/lib/api';
+import { useSession } from '@/lib/auth-client';
 import { qk } from '@/services/queryKeys';
 
 declare global {
@@ -11,6 +12,7 @@ declare global {
     __paseo_itsaplan?: {
       navigateProject: (projectKey: string) => void;
       prefetchProject: (projectKey: string) => void;
+      prefetchAllProjects: () => void;
     };
   }
 }
@@ -21,18 +23,18 @@ declare global {
  * Exposes client-side navigation and React Query prefetching so that clicking
  * a project button in Paseo's sidebar switches the board instantaneously without
  * triggering a full webview reload or waiting for uncached queries.
+ *
+ * Once a session exists, every project the account can see is warmed into the
+ * query cache and the Next route cache. Switching then reads memory, not the
+ * network.
  */
 export default function PaseoEmbedBridge() {
   const router = useRouter();
   const qc = useQueryClient();
+  const { data: session, isPending } = useSession();
+  const signedIn = Boolean(session?.user.id);
 
   useEffect(() => {
-    const navigateProject = (projectKey: string) => {
-      const trimmed = projectKey?.trim();
-      const path = trimmed ? `/project/${encodeURIComponent(trimmed)}` : '/';
-      router.push(path);
-    };
-
     const prefetchProject = (projectKey: string) => {
       const trimmed = projectKey?.trim();
       if (!trimmed) return;
@@ -52,9 +54,35 @@ export default function PaseoEmbedBridge() {
       });
     };
 
+    let warming = false;
+    const prefetchAllProjects = () => {
+      if (warming) return;
+      warming = true;
+      void qc
+        .fetchQuery({
+          queryKey: qk.projects,
+          queryFn: () => api.listProjects({ permissions: true }),
+        })
+        .then((projects: Project[]) => {
+          for (const project of projects) {
+            prefetchProject(project.key);
+          }
+        })
+        .finally(() => {
+          warming = false;
+        });
+    };
+
+    const navigateProject = (projectKey: string) => {
+      const trimmed = projectKey?.trim();
+      const path = trimmed ? `/project/${encodeURIComponent(trimmed)}` : '/';
+      router.replace(path);
+    };
+
     window.__paseo_itsaplan = {
       navigateProject,
       prefetchProject,
+      prefetchAllProjects,
     };
 
     const handleMessage = (event: MessageEvent) => {
@@ -64,16 +92,21 @@ export default function PaseoEmbedBridge() {
         navigateProject(data.projectKey);
       } else if (data.type === 'paseo:prefetch-project' && typeof data.projectKey === 'string') {
         prefetchProject(data.projectKey);
+      } else if (data.type === 'paseo:prefetch-all-projects') {
+        prefetchAllProjects();
       }
     };
 
     window.addEventListener('message', handleMessage);
+    if (!isPending && signedIn) {
+      prefetchAllProjects();
+    }
 
     return () => {
       delete window.__paseo_itsaplan;
       window.removeEventListener('message', handleMessage);
     };
-  }, [router, qc]);
+  }, [router, qc, isPending, signedIn]);
 
   return null;
 }
