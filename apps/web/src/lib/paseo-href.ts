@@ -2,11 +2,34 @@
  * Paseo posts agent citations as `paseo://h/<server>/agent/<id>`. Chromium
  * silently ignores those hrefs when they open as `target="_blank"` with
  * `noopener` (a new browsing context never invokes the OS protocol handler).
- * Same-window assign is what actually hands the URL to Paseo.
+ *
+ * Two follow paths:
+ * - In the Paseo desktop itsaplan webview (`Electron` UA), `window.open` so
+ *   the embed's setWindowOpenHandler can route the URL to openOrFocusAgent.
+ * - In a regular browser, same-window assign so the OS protocol handler runs.
  */
 
 export function isPaseoHref(href: string | null | undefined): boolean {
   return typeof href === 'string' && /^paseo:/i.test(href);
+}
+
+export function isElectronEmbed(userAgent: string): boolean {
+  return /Electron/i.test(userAgent);
+}
+
+export function followPaseoHref(
+  href: string,
+  env: {
+    userAgent: string;
+    open: (url: string, target?: string) => void;
+    assign: (url: string) => void;
+  },
+): void {
+  if (isElectronEmbed(env.userAgent)) {
+    env.open(href, '_blank');
+    return;
+  }
+  env.assign(href);
 }
 
 type ClickTarget = {
@@ -15,7 +38,7 @@ type ClickTarget = {
 
 /**
  * If `href` is a Paseo deep link, prevent the native `_blank` navigation and
- * assign it on the current window. Returns whether the click was consumed.
+ * follow it. Returns whether the click was consumed.
  */
 export function handlePaseoAnchorClick(
   event: {
@@ -23,7 +46,7 @@ export function handlePaseoAnchorClick(
     button?: number;
     preventDefault: () => void;
   },
-  assign: (href: string) => void,
+  follow: (href: string) => void,
 ): boolean {
   if ((event.button ?? 0) !== 0) return false;
   const node = event.target as ClickTarget | null;
@@ -32,6 +55,6 @@ export function handlePaseoAnchorClick(
   const href = anchor?.getAttribute('href');
   if (!isPaseoHref(href) || !href) return false;
   event.preventDefault();
-  assign(href);
+  follow(href);
   return true;
 }

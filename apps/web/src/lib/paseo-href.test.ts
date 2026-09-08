@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { handlePaseoAnchorClick, isPaseoHref } from './paseo-href';
+import { followPaseoHref, handlePaseoAnchorClick, isPaseoHref } from './paseo-href';
 
 describe('isPaseoHref', () => {
   it('accepts the agent deep-link scheme', () => {
@@ -16,9 +16,37 @@ describe('isPaseoHref', () => {
   });
 });
 
+describe('followPaseoHref', () => {
+  const href = 'paseo://h/srv_x/agent/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+  it('opens via window.open inside the Paseo desktop webview', () => {
+    const opened: string[] = [];
+    const assigned: string[] = [];
+    followPaseoHref(href, {
+      userAgent: 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Electron/44.2.0',
+      open: (url, target) => opened.push(`${url}|${target}`),
+      assign: (url) => assigned.push(url),
+    });
+    assert.deepEqual(opened, [`${href}|_blank`]);
+    assert.deepEqual(assigned, []);
+  });
+
+  it('assigns on the current window in a regular browser', () => {
+    const opened: string[] = [];
+    const assigned: string[] = [];
+    followPaseoHref(href, {
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/128.0.0.0',
+      open: (url) => opened.push(url),
+      assign: (url) => assigned.push(url),
+    });
+    assert.deepEqual(opened, []);
+    assert.deepEqual(assigned, [href]);
+  });
+});
+
 describe('handlePaseoAnchorClick', () => {
   function click(href: string | null, button = 0) {
-    const assigned: string[] = [];
+    const followed: string[] = [];
     const anchor = {
       getAttribute(name: string) {
         return name === 'href' ? href : null;
@@ -36,28 +64,28 @@ describe('handlePaseoAnchorClick', () => {
         this.prevented = true;
       },
     };
-    const handled = handlePaseoAnchorClick(event, (url) => assigned.push(url));
-    return { handled, assigned, prevented: event.prevented };
+    const handled = handlePaseoAnchorClick(event, (url) => followed.push(url));
+    return { handled, followed, prevented: event.prevented };
   }
 
-  it('assigns a paseo:// href on the current window and prevents _blank', () => {
+  it('follows a paseo:// href and prevents _blank', () => {
     const href = 'paseo://h/srv_x/agent/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const result = click(href);
     assert.equal(result.handled, true);
     assert.equal(result.prevented, true);
-    assert.deepEqual(result.assigned, [href]);
+    assert.deepEqual(result.followed, [href]);
   });
 
   it('leaves http(s) links to the browser', () => {
     const result = click('https://example.com/doc');
     assert.equal(result.handled, false);
     assert.equal(result.prevented, false);
-    assert.deepEqual(result.assigned, []);
+    assert.deepEqual(result.followed, []);
   });
 
   it('ignores non-primary clicks', () => {
     const result = click('paseo://h/srv_x/agent/y', 1);
     assert.equal(result.handled, false);
-    assert.deepEqual(result.assigned, []);
+    assert.deepEqual(result.followed, []);
   });
 });
