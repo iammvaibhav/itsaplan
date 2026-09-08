@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { api, type Project } from '@/lib/api';
 import { useSession } from '@/lib/auth-client';
 import { qk } from '@/services/queryKeys';
+import { projectPath } from '@/utils/paths';
 
 declare global {
   interface Window {
@@ -75,8 +76,7 @@ export default function PaseoEmbedBridge() {
 
     const navigateProject = (projectKey: string) => {
       const trimmed = projectKey?.trim();
-      const path = trimmed ? `/project/${encodeURIComponent(trimmed)}` : '/';
-      router.replace(path);
+      router.push(trimmed ? projectPath(trimmed) : '/');
     };
 
     window.__paseo_itsaplan = {
@@ -103,7 +103,6 @@ export default function PaseoEmbedBridge() {
     }
 
     return () => {
-      delete window.__paseo_itsaplan;
       window.removeEventListener('message', handleMessage);
     };
   }, [router, qc, isPending, signedIn]);
