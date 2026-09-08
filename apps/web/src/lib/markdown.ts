@@ -15,13 +15,19 @@ function newTab(node: Element): void {
   }
 }
 
+// DOMPurify's default scheme allowlist, plus `paseo`. Agents cite their own work
+// as paseo://h/<server>/agent/<id> deep links; under the default list the href is
+// stripped and the citation reads as plain text.
+const ALLOWED_URI_REGEXP =
+  /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|paseo):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
+
 // HTML that arrives already rendered, made safe for dangerouslySetInnerHTML. Used
 // for release notes, which GitHub renders and the api passes through unchanged.
 export function sanitizeHtml(html: string, options?: HtmlOptions): string {
-  if (!options?.newTabLinks) return DOMPurify.sanitize(html);
+  if (!options?.newTabLinks) return DOMPurify.sanitize(html, { ALLOWED_URI_REGEXP });
   DOMPurify.addHook('afterSanitizeAttributes', newTab);
   try {
-    return DOMPurify.sanitize(html);
+    return DOMPurify.sanitize(html, { ALLOWED_URI_REGEXP });
   } finally {
     DOMPurify.removeHook('afterSanitizeAttributes');
   }

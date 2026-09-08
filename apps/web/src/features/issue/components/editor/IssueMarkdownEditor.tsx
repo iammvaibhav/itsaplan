@@ -4,7 +4,6 @@ import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { TableKit } from '@tiptap/extension-table';
 import Placeholder from '@tiptap/extension-placeholder';
-import Link from '@tiptap/extension-link';
 import { common, createLowlight } from 'lowlight';
 import { Markdown } from 'tiptap-markdown';
 import { ResizableImage } from '../../utils/tiptap-image';
@@ -84,10 +83,17 @@ export default function IssueMarkdownEditor({
     editable,
     extensions: [
       // Replaces StarterKit's plain code block, keeping the node name codeBlock.
-      StarterKit.configure({ codeBlock: false }),
+      // The link mark is configured here rather than added a second time: two
+      // extensions under the name "link" warn and race for the schema.
+      // `paseo` is not in tiptap's default scheme allowlist, so a
+      // paseo://h/<server>/agent/<id> deep link posted by an agent parses with
+      // its href dropped and reads as plain text.
+      StarterKit.configure({
+        codeBlock: false,
+        link: { openOnClick: false, autolink: true, protocols: ['paseo'] },
+      }),
       CodeBlockLowlight.configure({ lowlight }),
       Placeholder.configure({ placeholder }),
-      Link.configure({ openOnClick: false, autolink: true }),
       // Renders ![](url) markdown inline.
       ResizableImage,
       // Renders an @username in the text as a mention chip, and offers the project's
