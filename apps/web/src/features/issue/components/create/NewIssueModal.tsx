@@ -127,9 +127,16 @@ function NewIssueForm({
       ? userId
       : null;
   });
-  const [delegateUserId, setDelegateUserId] = useState<string | null>(
-    defaults.delegateUserId ?? null,
-  );
+  const [delegateUserId, setDelegateUserId] = useState<string | null>(() => {
+    if (defaults.delegateUserId !== undefined) return defaults.delegateUserId;
+    const commanderAgent =
+      project.assignees.find(
+        (a) =>
+          a.kind === 'agent' &&
+          (a.username?.toLowerCase() === 'commander' || a.name.toLowerCase() === 'commander'),
+      ) ?? project.assignees.find((a) => a.kind === 'agent');
+    return commanderAgent?.userId ?? null;
+  });
   const [priority, setPriority] = useState(defaults.priority ?? '');
   const [estimatePoints, setEstimatePoints] = useState<number | null>(null);
   const [estimateMinutes, setEstimateMinutes] = useState<number | null>(null);
