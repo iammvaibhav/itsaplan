@@ -17,6 +17,7 @@ import EditorSelectionMenu from '@/components/common/editor/EditorSelectionMenu'
 import EditorTableMenu from '@/components/common/editor/EditorTableMenu';
 import { useMentionCandidates } from '@/hooks/useMentionCandidates';
 import { useTranslations } from 'next-intl';
+import { handlePaseoAnchorClick } from '@/lib/paseo-href';
 
 // Shared by every editor instance. A block with no language is detected by
 // highlightAuto, so there is no language picker.
@@ -126,6 +127,14 @@ export default function IssueMarkdownEditor({
       attributes: {
         // flex-1 so the typing area covers a container taller than the text.
         class: 'md-content flex-1 focus:outline-none',
+      },
+      // Read-only comments skip TipTap's openOnClick plugin (`!view.editable`
+      // returns false there), so the native `<a target="_blank">` fires.
+      // `paseo://` + `_blank` is a no-op in Chromium; assign on this window.
+      handleDOMEvents: {
+        click(_view, event) {
+          return handlePaseoAnchorClick(event, (href) => window.location.assign(href));
+        },
       },
       // Files dropped from the OS are uploaded, then inserted at the drop
       // position. Internal moves and attachment-card drags (which carry

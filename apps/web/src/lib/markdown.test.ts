@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { markdownSegments } from './markdown';
+import { markdownSegments, sanitizeHtml } from './markdown';
 
 const spec =
   '{"type":"bar","x":"week","series":[{"key":"created"}],"data":[{"week":"W1","created":3}]}';
@@ -53,5 +53,24 @@ describe('markdownSegments', () => {
       'markdown',
       'chart',
     ]);
+  });
+});
+
+describe('sanitizeHtml paseo links', () => {
+  it('keeps paseo:// hrefs clickable and does not force target=_blank', () => {
+    const html = sanitizeHtml(
+      '<p>Dispatched: <a href="paseo://h/srv_x/agent/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee">agent</a></p>',
+      { newTabLinks: true },
+    );
+    assert.match(html, /href="paseo:\/\/h\/srv_x\/agent\/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"/);
+    assert.equal(/target="_blank"/i.test(html), false);
+  });
+
+  it('still opens http(s) links in a new tab when asked', () => {
+    const html = sanitizeHtml('<p><a href="https://example.com">doc</a></p>', {
+      newTabLinks: true,
+    });
+    assert.match(html, /href="https:\/\/example.com"/);
+    assert.match(html, /target="_blank"/i);
   });
 });

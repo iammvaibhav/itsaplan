@@ -1,6 +1,7 @@
 import { marked } from 'marked';
 import DOMPurify from 'isomorphic-dompurify';
 import { parseChartSpec, type ChartSpec } from '@/utils/chartSpec';
+import { isPaseoHref } from '@/lib/paseo-href';
 
 // Content whose links lead away from the current view (release notes, agent chat)
 // asks for newTabLinks, so following one does not replace what the reader was on.
@@ -10,6 +11,9 @@ export interface HtmlOptions {
 
 function newTab(node: Element): void {
   if (node.tagName === 'A' && node.hasAttribute('href')) {
+    // Custom `paseo:` schemes must stay same-window: `_blank` + `noopener`
+    // is ignored by Chromium and the click appears to do nothing.
+    if (isPaseoHref(node.getAttribute('href'))) return;
     node.setAttribute('target', '_blank');
     node.setAttribute('rel', 'noreferrer');
   }
