@@ -36,9 +36,12 @@ export default function PaseoEmbedBridge() {
   const signedIn = Boolean(session?.user.id);
 
   useEffect(() => {
+    // Prefetch only with a session. Signed out, the reads answer 401, and lib/api
+    // treats a 401 as an ended session: it signs out and reloads to /login. Paseo
+    // calls these on every guest load, so that became a reload loop on /login.
     const prefetchProject = (projectKey: string) => {
       const trimmed = projectKey?.trim();
-      if (!trimmed) return;
+      if (!signedIn || !trimmed) return;
       const path = `/project/${encodeURIComponent(trimmed)}`;
       router.prefetch(path);
       void qc.prefetchQuery({
@@ -57,7 +60,7 @@ export default function PaseoEmbedBridge() {
 
     let warming = false;
     const prefetchAllProjects = () => {
-      if (warming) return;
+      if (!signedIn || warming) return;
       warming = true;
       void qc
         .fetchQuery({
