@@ -3,12 +3,13 @@ import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 
 const nextConfig: NextConfig = {
-  // LAN / WireGuard access from the MacBook. Next 16 blocks /_next/static
+  // LAN / NetBird access from the MacBook. Next 16 blocks /_next/static
   // for any origin that is not localhost unless it is listed here.
   allowedDevOrigins: [
     '127.0.0.1',
     'localhost',
-    '10.7.0.1',
+    'dev.netbird.cloud',
+    '100.123.178.38',
     '10.0.0.237',
     'iammvaibhav',
     'vaibhav-dev',
