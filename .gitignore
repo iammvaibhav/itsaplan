@@ -44,3 +44,7 @@ coverage
 
 # agent scratch space (test docs, drafts)
 .workspace/
+
+# tls-proxy: local CA and signing artifacts (private key), generated per host
+tls-proxy/ca.*
+tls-proxy/leaf.ext
