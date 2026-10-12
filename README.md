@@ -3,15 +3,16 @@
 >
 > | Area | Change |
 > |---|---|
-> | All tickets | A cross-project **All tickets** board (`/tickets`): project-style columns matched by name, moves and create-with-project, in-place side panel, command palette and shortcuts. |
-> | Board columns | New projects get a **Ready to review** column; existing boards are backfilled (migration `0106`). |
+> | All tickets | A cross-project **All tickets** board (`/tickets`) over every project you can see (same rule as the project picker): project-style columns matched by name, moves, new issue with a project picker, in-place side panel, command palette and shortcuts. |
+> | Board columns | New projects get a **Ready to review** column; existing boards are backfilled (migration `0148`). |
 > | AI agents | AI agents are selectable as issue assignees. New issues delegate to the Paseo Commander while the creator stays the assignee. |
-> | MCP | **MCP access is on by default for new projects** (migration `0107`); upstream starts every project with MCP off. Owners can still turn it off per project. |
 > | Paseo embed | The web app runs inside Paseo: a client-navigation bridge (`PaseoEmbedBridge`), every project warmed into the cache on sign-in, `paseo://` agent links in comments and agent text open correctly, no prefetch while signed out. |
 > | Web serving | The browser talks to the API through a same-origin `/__api` prefix; the API origin is derived from the request; better-auth gets an explicit mount path; the web app runs the Next.js standalone server; the release notes dialog is lazy-loaded. |
 > | Private network | `tls-proxy/` is a TLS passthrough for secure-context browser access (8443 → web, 8444 → API) over NetBird; NetBird hosts are allowed as dev origins. Certificates and keys are generated locally and never committed. |
 >
 > Remotes: `origin` is this fork, `upstream` is croffasia/itsaplan. To pick up upstream: `git fetch upstream && git merge upstream/main` on `vaibhav/customizations`, then `bun run db:migrate`.
+>
+> **Migrations:** keep fork migrations numbered after upstream's latest. Drizzle applies only migrations newer than the last one applied, so a fork migration that sorts after an upstream one makes every later upstream migration silently skip.
 
 <div align="center">
 
