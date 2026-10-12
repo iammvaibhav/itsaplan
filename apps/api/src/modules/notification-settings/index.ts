@@ -1,8 +1,9 @@
 import { Elysia } from 'elysia';
 import { guards } from '#shared/guards';
 import { authContext } from '#shared/auth-context';
-import { accessErrors, commonErrors } from '#shared/responses';
-import { getProjectEmailConfig } from '@repo/auth';
+import { errors } from '#shared/responses';
+import { getProjectEmailConfig } from '@repo/db';
+import { teamParams } from '#modules/teams/model';
 import { NotificationSettingsBody, NotificationSettingsResponse } from './model';
 import {
   getNotificationSettings,
@@ -10,8 +11,8 @@ import {
   type NotificationSettingsDto,
 } from './service';
 
-// Adds whether the instance provider is available to projects right now. It is an
-// instance setting, so it is reported alongside the project's own settings rather
+// Adds whether the instance provider is available to teams right now. It is an
+// instance setting, so it is reported alongside the team's own settings rather
 // than stored with them.
 async function withSystemAvailability(settings: NotificationSettingsDto) {
   return { ...settings, systemAvailable: (await getProjectEmailConfig()) !== null };
@@ -19,8 +20,9 @@ async function withSystemAvailability(settings: NotificationSettingsDto) {
 
 // Notification provider credentials carry secrets (SMTP password, Resend key,
 // Telegram bot token), so they are managed only through the session UI and not
-// exposed as MCP tools. Gated under the danger_zone resource, the project-level
-// settings gate. A member's own delivery preferences live in notification-preferences.
+// exposed as MCP tools. They belong to the team and serve every project it owns, so
+// only its owner reads or changes them. A member's own delivery preferences live in
+// notification-preferences.
 export const notificationSettingsRoutes = new Elysia({
   name: 'notification-settings',
   detail: { tags: ['Settings'] },
@@ -29,29 +31,32 @@ export const notificationSettingsRoutes = new Elysia({
   .use(guards)
 
   .get(
-    '/projects/:projectKey/notification-settings',
-    async ({ project }) => withSystemAvailability(await getNotificationSettings(project.id)),
+    '/teams/:teamId/notification-settings',
+    async ({ membership }) =>
+      withSystemAvailability(await getNotificationSettings(membership.teamId)),
     {
-      permission: ['danger_zone', 'read'],
-      response: { 200: NotificationSettingsResponse, ...accessErrors },
+      teamOwner: true,
+      params: teamParams,
+      response: { 200: NotificationSettingsResponse, ...errors(401, 403, 404) },
       detail: {
         summary: 'Get notification provider settings',
-        description: "Get a project's notification provider settings (secrets redacted).",
+        description: "Get a team's notification provider settings (secrets redacted).",
       },
     },
   )
 
   .put(
-    '/projects/:projectKey/notification-settings',
-    async ({ project, body }) =>
-      withSystemAvailability(await setNotificationSettings(project.id, body)),
+    '/teams/:teamId/notification-settings',
+    async ({ membership, body }) =>
+      withSystemAvailability(await setNotificationSettings(membership.teamId, body)),
     {
+      teamOwner: true,
+      params: teamParams,
       body: NotificationSettingsBody,
-      permission: ['danger_zone', 'edit'],
-      response: { 200: NotificationSettingsResponse, ...commonErrors },
+      response: { 200: NotificationSettingsResponse, ...errors(400, 401, 403, 404) },
       detail: {
         summary: 'Update notification provider settings',
-        description: "Update a project's notification provider settings.",
+        description: "Update a team's notification provider settings.",
       },
     },
   );

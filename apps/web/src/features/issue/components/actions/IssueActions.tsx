@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { ActionDef, ProjectDetail, Issue, SubtaskDisposition } from '@/lib/api';
+import type { ActionDef } from '@/lib/api/endpoints/actions';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { Issue, SubtaskDisposition } from '@/lib/api/endpoints/issues';
 import { matchesFilterSet } from '@/utils/filters';
 import { describeEffect } from '@/utils/actions';
 import { useEffectText } from '@/hooks/useEffectText';
@@ -62,7 +64,7 @@ export function DeleteIssueDialog({
   onDeleted?: () => void;
 }) {
   const t = useTranslations('issue.actions');
-  const deleteIssue = useDeleteIssue(project.project.key);
+  const deleteIssue = useDeleteIssue(project.project.ref);
   // The board carries only active issues, so an archived issue's subtasks are not
   // countable from it. The detail read carries them, archived ones included; it is
   // already cached on the issue page and fetched once when the dialog opens
@@ -88,7 +90,7 @@ export function DeleteIssueDialog({
       </p>
       {subtasks > 0 && (
         <SubtaskDisposalChoice
-          projectKey={project.project.key}
+          projectKey={project.project.ref}
           action="delete"
           count={subtasks}
           removedIssueIds={[issue.id]}
@@ -114,7 +116,7 @@ export function ApplyActionDialog({
   onClose: () => void;
 }) {
   const t = useTranslations('issue.actions');
-  const updateIssue = useUpdateIssue(project.project.key);
+  const updateIssue = useUpdateIssue(project.project.ref);
   return (
     <ConfirmDialog
       title={action.name}

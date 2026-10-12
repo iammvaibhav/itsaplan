@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import type { NotificationPreferences as Prefs } from '@/lib/api';
+import type { NotificationPreferences as Prefs } from '@/lib/api/endpoints/notificationPreferences';
 import { useShell } from '@/context/shellContext';
 import { Button } from '@/components/ui/button';
 import SectionPageView from '@/components/common/page/SectionPageView';
@@ -11,26 +11,21 @@ import { useNotificationPreferencesQuery } from './services/settings.service';
 import { useNotificationPreferencesForm } from './hooks/useNotificationPreferencesForm';
 import { useTranslations } from 'next-intl';
 
-// The member's own notification preferences (/project/:projectKey/notifications).
+// The member's own notification preferences (/:team/:projectKey/notifications).
 // A main-nav Configuration destination, open to any member: choose which issue events
 // you get and where (email, Telegram), plus your Telegram chat id. The delivery
-// providers are configured separately by admins (settings -> Notification providers).
+// providers are configured separately by the owner of the team that runs the project
+// (the team panel -> Notification providers).
 export default function NotificationPreferencesPage() {
   const { project } = useShell();
   if (!project) return null;
-  return <PreferencesPage projectKey={project.project.key} />;
+  return <PreferencesPage projectKey={project.project.ref} />;
 }
 
 function Chrome({ actions, children }: { actions?: ReactNode; children: ReactNode }) {
   const t = useTranslations('settings.notifications');
   return (
-    <SectionPageView
-      title={t('title')}
-      description={t('description')}
-      wide
-      widthClassName="min-w-[600px] max-w-[60%]"
-      actions={actions}
-    >
+    <SectionPageView title={t('title')} description={t('description')} actions={actions}>
       {children}
     </SectionPageView>
   );

@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
-import { ApiError, type Cycle } from '@/lib/api';
+import type { Cycle } from '@/lib/api/endpoints/cycles';
+import { ApiError } from '@/lib/api/core/client';
 import { formatShortDate } from '@/utils/dates';
 import Modal from '@/components/common/overlay/Modal';
 import { Button } from '@/components/ui/button';
@@ -55,7 +56,7 @@ export default function TransferIssuesDialog({
       title={t('title')}
       crumb={cycle.name}
       description={t('description')}
-      projectKey={projectKey}
+      scope={projectKey}
       onClose={onClose}
     >
       <div className="flex flex-col gap-4">

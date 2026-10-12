@@ -1,9 +1,17 @@
 import { Elysia } from 'elysia';
+import { requireUser } from '#shared/access';
 import { authContext } from '#shared/auth-context';
 import { errors } from '#shared/responses';
-import { getStorageSettings, getHotkeySettings } from './service';
+import { getStorageSettings } from '@repo/db';
+import { getHotkeySettings } from './service';
 import { getAppVersion } from './updates';
-import { HotkeyCombosSchema, StorageSettingsSchema, VersionResponse } from './model';
+import { getWhatsNew, markWhatsNewSeen } from './whats-new';
+import {
+  HotkeyCombosSchema,
+  StorageSettingsSchema,
+  VersionResponse,
+  WhatsNewSchema,
+} from './model';
 
 // Routes for global instance settings (app_setting): a key-value store not scoped
 // to a project. The MCP toggle is per-project (see modules/projects), not here.
@@ -42,4 +50,32 @@ export const settingsRoutes = new Elysia({
       summary: 'Get the running version',
       description: 'Get the version of the app this instance runs.',
     },
-  });
+  })
+
+  // What the running release brought, plus — for the instance owner — the
+  // pre-migration database dump and what the migrations did to the instance's data.
+  // The notes come from the release feed merged over the shipped changelog; the feed
+  // is cached, so a session rarely waits on it.
+  .get('/settings/whats-new', ({ user }) => getWhatsNew(requireUser(user)), {
+    response: { 200: WhatsNewSchema, ...errors(401) },
+    detail: {
+      summary: "Get the release's what's-new screen",
+      description:
+        "Get the running release's notes and, for an administrator, the backup taken before its migrations and the report of what they changed. `pending` is false once this user has closed the screen for this version.",
+    },
+  })
+
+  .post(
+    '/settings/whats-new/seen',
+    async ({ user }) => {
+      await markWhatsNewSeen(requireUser(user).id);
+      return { version: getAppVersion() };
+    },
+    {
+      response: { 200: VersionResponse, ...errors(401) },
+      detail: {
+        summary: "Close the what's-new screen",
+        description: 'Record that this user has seen the screen for the running version.',
+      },
+    },
+  );

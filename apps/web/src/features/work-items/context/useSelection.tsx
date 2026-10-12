@@ -46,7 +46,7 @@ export function SelectionProvider({
   children: ReactNode;
 }) {
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
-  const { matches } = useHotkeyMatch();
+  const matches = useHotkeyMatch();
 
   // Latest board ids, read by the keyboard/event handlers without re-binding them.
   const validIdsRef = useRef(validIds);

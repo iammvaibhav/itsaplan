@@ -76,7 +76,7 @@ registered.
 select r.scope, r.rev, m.role, pr.permissions
 from revision r
 join project_member m on m.project_id = r.project_id and m.user_id = $userId
-left join project_role pr on pr.id = m.role_id
+left join team_role pr on pr.id = m.role_id
 where r.scope = any($scopes)
 ```
 

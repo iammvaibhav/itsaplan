@@ -4,13 +4,13 @@ import { ENCRYPTION_MODES } from './service';
 const encryption = t.UnionEnum([...ENCRYPTION_MODES]);
 
 // The redacted settings DTO (NotificationSettingsDto from the service): the
-// project's provider credentials. Secrets are never returned; each is replaced by a
+// team's provider credentials. Secrets are never returned; each is replaced by a
 // boolean telling whether a value is stored.
 export const NotificationSettingsResponse = t.Object({
-  // Deliver email through the instance provider instead of the project's own.
+  // Deliver email through the instance provider instead of the team's own.
   system: t.Object({ enabled: t.Boolean() }),
-  // Whether that instance provider exists and is shared with projects right now.
-  // The project cannot see or change it, so the UI states why sending is off.
+  // Whether that instance provider exists and is shared with teams right now.
+  // The team cannot see or change it, so the UI states why sending is off.
   systemAvailable: t.Boolean(),
   smtp: t.Object({
     enabled: t.Boolean(),

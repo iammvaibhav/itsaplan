@@ -1,23 +1,28 @@
 'use client';
 
-import { Bot, LogOut, UserMinus } from 'lucide-react';
+import { LogOut, UserMinus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { MemberRow as Member, Role } from '@/lib/api';
+import type { MemberRow as Member } from '@/lib/api/endpoints/members';
+import type { Role } from '@/lib/api/endpoints/roles';
 import { formatDateTime } from '@/utils/dates';
 import Avatar from '@/components/common/Avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSession } from '@/lib/auth-client';
+import MemberAgentBadge from './MemberAgentBadge';
+import MemberProvisionedBadge from '@/components/common/MemberProvisionedBadge';
 import MemberRoleControl from './MemberRoleControl';
 import MemberDescription from './MemberDescription';
 import MemberDescriptionDialog from './MemberDescriptionDialog';
 
 // One member's row in the members list: identity, role control, and the actions
-// (edit description, leave or revoke access). An owner can revoke anyone's
-// access; a member can only leave. The last owner cannot be removed.
+// (edit description, leave or revoke access). Acting on someone else's membership
+// needs the member permission or the standing of an owner or manager of the team
+// that runs the project; anyone can leave and describe what they do themselves. The
+// last owner cannot be removed, and neither is a membership a provisioned group
+// granted — that one changes in the identity provider, and the API refuses it here.
 export default function MemberRow({
   projectKey,
   member,
@@ -32,14 +37,18 @@ export default function MemberRow({
   onRemove: (member: Member) => void;
 }) {
   const t = useTranslations('members');
-  const { can, isOwner } = usePermissions();
+  const { can, isAdmin } = usePermissions();
   const { data: session } = useSession();
 
   const self = member.userId === session?.user.id;
-  // Agents join and leave with their AI Agent config, not from this list,
-  // so they cannot be revoked or reassigned here.
-  const canRemove = !member.isAgent && (self || can('members_manage', 'delete'));
-  const canEditDescription = !member.isAgent && (isOwner || self);
+  // Removing or re-roling a provisioned membership would be undone at the next sync.
+  const provisioned = member.source === 'scim';
+  const canEdit = can('members_manage', 'edit') || isAdmin;
+  // An agent joins and leaves with its AI Agent config, so it cannot be revoked here;
+  // its role is set here like a person's.
+  const canRemove =
+    !member.isAgent && !provisioned && (self || can('members_manage', 'delete') || isAdmin);
+  const canEditDescription = !member.isAgent && (self || canEdit);
   const removeLabel = self ? t('leaveProject') : t('revokeAccess');
   const displayName = member.name || member.email;
 
@@ -59,13 +68,11 @@ export default function MemberRow({
                 {self && (
                   <span className="text-xs font-normal text-muted-foreground">{t('you')}</span>
                 )}
+                {provisioned && <MemberProvisionedBadge />}
               </span>
               <span className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                 {member.isAgent ? (
-                  <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[10px] font-medium">
-                    <Bot className="size-3" />
-                    {t('aiAgent')}
-                  </Badge>
+                  <MemberAgentBadge />
                 ) : (
                   <>
                     {member.username && (
@@ -88,7 +95,8 @@ export default function MemberRow({
           projectKey={projectKey}
           member={member}
           roles={roles}
-          canManage={isOwner && !self && !member.isAgent}
+          canManage={canEdit && !self && !provisioned}
+          canGrantOwner={isAdmin}
           isLastOwner={isLastOwner}
         />
       </TableCell>

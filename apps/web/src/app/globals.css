@@ -188,7 +188,8 @@
   --chat-composer-shadow: 0 -2px 22px 4px rgb(0 0 0 / 0.7);
 }
 
-/* Every floating surface lifts off the page with the same shadow. It is set here
+/* Every floating surface lifts off the page with the same shadow, and a border
+   fainter than the page's so it does not read as a bright outline. It is set here
    rather than per component: the shadcn components are kept as generated, and
    `shadow-md` on a popover reads as nothing against a background of nearly the
    same lightness. These rules sit outside @layer, so they win over the utility. */
@@ -201,6 +202,22 @@
 [data-slot='combobox-content'],
 [data-slot='tooltip-content'] {
   box-shadow: var(--overlay-shadow);
+  border-color: color-mix(in oklab, var(--border) 55%, transparent);
+}
+
+/* A tooltip is never pointed at, so it must not take the pointer from what it
+   stands over. The rule sits on the popper wrapper, not on the tooltip itself: the
+   wrapper is the box that receives the events, and pointer-events is inherited. */
+[data-radix-popper-content-wrapper]:has(> [data-slot='tooltip-content']) {
+  pointer-events: none;
+}
+
+/* An alert states its kind by colour, and every place one appears already sits
+   inside a bordered surface. The generated component carries an unconditional
+   `border`, which reads as a box drawn inside a box. A caller that wants one back
+   sets both the width and the colour. */
+[data-slot='alert'] {
+  border-width: 0;
 }
 
 /* Dialogs and sheets cover a far larger area, so they carry a wider, deeper cast
@@ -373,6 +390,48 @@
   padding: 0.05em 0.35em;
   font-weight: 500;
   white-space: nowrap;
+}
+.md-content .mention.mention-self {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--warning) 45%, transparent);
+}
+a.issue-ref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  max-width: 100%;
+  vertical-align: baseline;
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  border-radius: 0.375em;
+  padding: 0.05em 0.35em;
+  font-weight: 500;
+  line-height: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.md-content a.issue-ref {
+  text-decoration: none;
+}
+.issue-ref-dot {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 9999px;
+  flex: none;
+  align-self: center;
+}
+.issue-ref-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16em;
+  font-weight: 400;
+  color: var(--foreground);
+}
+.md-content .issue-ref-source {
+  font-size: 0;
+  line-height: 0;
 }
 .md-content code {
   background: var(--muted);
@@ -607,13 +666,28 @@
 [dir='rtl'] .sticker-note {
   direction: rtl;
 }
-/* Sticky notes always sit on a light pastel background, so their placeholder and
-   checkboxes are keyed to dark regardless of the app theme. */
+/* Sticky notes always sit on a light pastel background, so their placeholder,
+   checkboxes and links are keyed to dark regardless of the app theme. */
 .sticker-note .md-content p.is-editor-empty:first-child::before {
   color: rgba(0, 0, 0, 0.4);
 }
 .sticker-note .md-content ul[data-type='taskList'] input[type='checkbox'] {
   accent-color: #000;
+}
+.sticker-note .md-content a[href]:not([href='']) {
+  color: var(--color-blue-800);
+  cursor: pointer;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+.sticker-note .md-content a[href]:not([href='']):hover {
+  color: var(--color-blue-950);
+  background-color: color-mix(in oklab, var(--color-blue-800) 10%, transparent);
+}
+.sticker-note .md-content a[href]:not([href='']):focus-visible {
+  border-radius: 2px;
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 /* React Flow's default edge stroke is too dark on the canvas in both themes. */
 .react-flow__edge-path,
@@ -621,7 +695,11 @@
   stroke: var(--muted-foreground);
   stroke-width: 1.5;
 }
+/* Tailwind's preflight makes every image a block, which stacks a row of them — the
+   contributor avatars in the release notes — one per line. */
 .md-content img {
+  display: inline-block;
+  vertical-align: middle;
   max-width: 100%;
   height: auto;
   border-radius: var(--radius-md);
@@ -716,4 +794,28 @@
   to {
     background-position: -200% 0;
   }
+}
+
+.md-content [id^='block-']:target {
+  outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 6px;
+  border-radius: 4px;
+  scroll-margin-top: 5rem;
+}
+.document-issue-link {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  padding: 1px 5px;
+  text-decoration: none;
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+.document-comment-mark {
+  background-color: color-mix(in oklch, var(--primary) 12%, transparent);
+  border-bottom: 2px solid color-mix(in oklch, var(--primary) 45%, transparent);
+  cursor: pointer;
+}
+.document-comment-mark:hover {
+  background-color: color-mix(in oklch, var(--primary) 22%, transparent);
 }

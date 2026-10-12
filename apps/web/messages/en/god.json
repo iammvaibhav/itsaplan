@@ -1,17 +1,4 @@
 {
-  "pager": {
-    "perPage": "Per page",
-    "rowsPerPage": "Rows per page",
-    "range": "{first}-{last} of {total}",
-    "previous": "Previous page",
-    "next": "Next page"
-  },
-  "access": {
-    "owner": "An owner has full access: the role matrix is not consulted.",
-    "role": "Resolved from the \"{role}\" role.",
-    "default": "No role assigned: the default member permissions apply.",
-    "joined": "joined {date}"
-  },
   "providers": {
     "credential": "Password",
     "google": "Google",
@@ -70,6 +57,7 @@
     "deleteConfirm": "Delete account",
     "deleteConfirmWithProjects": "{count, plural, one {Delete account and project} other {Delete account and projects}}",
     "deleteMessage": "<strong>{name}</strong> loses access to this instance. Issues and comments they wrote stay, with the author unassigned. This cannot be undone.",
+    "deleteWorkspaceNote": "A workspace this account owns is deleted with it while it has no projects or AI agents. Otherwise it passes to you, with everything the account owned alone in it.",
     "soleOwnerTitle": "{count, plural, one {Only owner of a project} other {Only owner of # projects}}",
     "soleOwnerHint": "{count, plural, one {Once the account is gone, nobody can manage it.} other {Once the account is gone, nobody can manage them.}}",
     "deleteWithProjects": "{count, plural, one {Delete the project with the account} other {Delete the projects with the account}}",
@@ -113,12 +101,76 @@
       "views": "Views",
       "agents": "AI agents",
       "skills": "Skills",
-      "tools": "Tools",
-      "integrations": "Integrations"
+      "tools": "Tools"
     },
     "members": "Members",
     "noMembersTitle": "No members",
     "noMembersHint": "Nobody can reach this project until someone is invited to it."
+  },
+  "teams": {
+    "empty": "No teams match this search.",
+    "searchPlaceholder": "Search by name",
+    "columns": {
+      "team": "Team",
+      "projects": "Projects",
+      "members": "Members",
+      "issues": "Issues",
+      "agents": "Agents",
+      "mcp": "MCP"
+    },
+    "mcpEnabled": "Enabled",
+    "mcpOff": "Off",
+    "open": "Open team",
+    "showDetails": "Show team details"
+  },
+  "teamPanel": {
+    "mcpEnabled": "MCP enabled",
+    "mcpOff": "MCP off",
+    "created": "created {date}",
+    "statTitle": "{label}: {value}",
+    "stats": {
+      "projects": "Projects",
+      "issues": "Issues",
+      "members": "Members",
+      "agents": "AI agents",
+      "skills": "Skills",
+      "tools": "Tools",
+      "roles": "Project roles"
+    },
+    "projects": "Projects",
+    "searchProjects": "Search projects",
+    "projectCounts": "{issues} issues · {members} members",
+    "noProjectsTitle": "No projects",
+    "noProjectsHint": "This team owns no projects yet.",
+    "noProjectMatches": "No projects match this search.",
+    "members": "Members",
+    "searchMembers": "Search members",
+    "noMembersTitle": "No members",
+    "noMembersHint": "Nobody belongs to this team yet.",
+    "noMemberMatches": "No members match this search.",
+    "roles": {
+      "owner": "Owner",
+      "manager": "Manager",
+      "member": "Member",
+      "agent": "Agent"
+    },
+    "joined": "joined {date}"
+  },
+  "general": {
+    "saved": "Project defaults saved",
+    "projectDefaults": "Project defaults",
+    "mcpEnabled": "Enable MCP on new projects",
+    "mcpEnabledHint": "A new project is in its team's MCP reach from the moment it is created.",
+    "workspacesSaved": "Workspace settings saved",
+    "workspaces": "Workspaces",
+    "personalWorkspaces": "A workspace for everyone",
+    "personalWorkspacesHint": "Every account gets a workspace of its own, named after the person. Off, people work only in the workspaces they are added to.",
+    "agents": "Agents",
+    "agentsSaved": "Agent settings saved",
+    "traceRetention": "Keep run traces",
+    "traceRetentionHint": "Each agent run records its model and tool calls. Usage dashboards count only the runs still kept.",
+    "traceDays": "{days, plural, one {# day} other {# days}}",
+    "traceForever": "Forever"
   },
   "authentication": {
     "saved": "Authentication settings saved",
@@ -139,12 +191,17 @@
       }
     },
     "signIn": "Sign-in options",
-    "signInHint": "Options that need outbound mail. They stay off until a provider is configured.",
+    "signInHint": "How people sign in. The options that send mail stay off until a provider is configured.",
     "needsProvider": "Set up the Email provider under Integrations first.",
     "requireVerification": "Require email confirmation",
     "requireVerificationHint": "A new account must confirm its address before it can sign in.",
     "magicLink": "Sign-in links",
-    "magicLinkHint": "Offer signing in with a link sent by email, alongside the password."
+    "magicLinkHint": "Offer signing in with a link sent by email, alongside the password.",
+    "trustProviderEmails": "Trust addresses from sign-in providers",
+    "trustProviderEmailsHint": "Google and OpenID Connect sign a person in to the account that already has their address, confirmed here or not. Turn this on only where you control who can register at the provider.",
+    "emailPassword": "Email and password",
+    "emailPasswordHint": "Offer the sign-in and sign-up form. Turn it off to let people in through a sign-in provider only.",
+    "needsSso": "Set up a sign-in provider under Integrations first."
   },
   "hotkeys": {
     "saved": "Keyboard shortcuts saved"
@@ -194,8 +251,13 @@
     "timeout": "Timeout (s)",
     "optional": "Optional",
     "apiKey": "API key",
-    "projectNotifications": "Project notifications",
-    "projectNotificationsHint": "Let projects deliver their notifications through this provider instead of configuring one of their own. Each project still chooses whether to use it."
+    "teamNotifications": "Team notifications",
+    "teamNotificationsHint": "Let teams deliver their notifications through this provider instead of configuring one of their own. Each team still chooses whether to use it.",
+    "test": "Send test email",
+    "testing": "Sending…",
+    "testHint": "Send a real message with the current settings without saving them.",
+    "testConfigureFirst": "Enable a provider and add its required credentials first.",
+    "testSent": "Test email sent to {email}"
   },
   "authProvider": {
     "saved": "Auth provider saved",
@@ -206,6 +268,17 @@
     "clientSecret": "Client secret",
     "redirectUri": "Redirect URI",
     "redirectUriHint": "Register this on the OAuth client in the Google Cloud console. Google refuses the sign-in if it does not match exactly.",
-    "copyRedirectUri": "Copy redirect URI"
+    "copyRedirectUri": "Copy redirect URI",
+    "oidc": "OpenID Connect",
+    "oidcConfigured": "An address without an account gets one; an address that already has a confirmed account signs into it.",
+    "oidcMissing": "Add the discovery URL, client ID and secret first.",
+    "discoveryUrl": "Discovery URL",
+    "discoveryUrlHint": "Your provider's .well-known/openid-configuration. The authorization, token and userinfo endpoints are read from it.",
+    "oidcLabel": "Button label",
+    "oidcLabelPlaceholder": "Sign in with Acme SSO",
+    "oidcLabelHint": "Names your provider on the sign-in button. Leave it empty for a generic label.",
+    "scopes": "Scopes",
+    "scopesHint": "Separated by spaces. openid is required; profile and email fill in the name and address.",
+    "oidcRedirectUriHint": "Register this as a redirect URI on the client at your identity provider. The provider refuses the sign-in if it does not match exactly."
   }
 }

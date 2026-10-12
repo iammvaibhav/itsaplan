@@ -3,6 +3,7 @@ import { authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { addProjectMember } from '#tests/helpers/members';
+import { createRole } from '#tests/helpers/roles';
 
 // Cycles are time-boxed periods of work inside a project (sprints). Issues link to
 // one through issue.cycleId. The status (upcoming/active/completed) follows from the
@@ -598,9 +599,10 @@ describe('cycles', () => {
     it('reads under work items, so a role without cycle access can plan an issue', async () => {
       const { asOwner } = await setup();
       await createCycle(asOwner, { name: 'Current' });
-      const role = await asOwner
-        .projects({ projectKey: 'MKT' })
-        .roles.post({ name: 'Issues only', permissions: { work_items: { read: true } } });
+      const role = await createRole(asOwner, 'MKT', {
+        name: 'Issues only',
+        permissions: { work_items: { read: true } },
+      });
       const asMember = await addProjectMember(asOwner, 'MKT', role.data!.id);
 
       expect((await cycles(asMember).options.get()).status).toBe(200);
@@ -610,9 +612,7 @@ describe('cycles', () => {
 
     it('denies a role without work item access', async () => {
       const { asOwner } = await setup();
-      const role = await asOwner
-        .projects({ projectKey: 'MKT' })
-        .roles.post({ name: 'Nothing', permissions: {} });
+      const role = await createRole(asOwner, 'MKT', { name: 'Nothing', permissions: {} });
       const asMember = await addProjectMember(asOwner, 'MKT', role.data!.id);
       expect((await cycles(asMember).options.get()).status).toBe(403);
     });

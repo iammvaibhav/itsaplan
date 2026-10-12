@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useShell } from '@/context/shellContext';
-import type { InitiativeCounts } from '@/lib/api';
+import type { InitiativeCounts } from '@/lib/api/endpoints/initiatives';
 import { useInitiativeCountsQuery } from '@/services/initiatives.service';
 import { initiativesTabPath, type InitiativesTab } from '@/utils/paths';
 import { readInitiativeTabOrder } from './hooks/useInitiativeTabOrder';
@@ -26,7 +26,7 @@ function firstTabWithInitiatives(counts: InitiativeCounts | undefined): Initiati
 export default function InitiativesRedirect() {
   const { project } = useShell();
   const router = useRouter();
-  const projectKey = project?.project.key ?? null;
+  const projectKey = project?.project.ref ?? null;
   const { data: counts, isError } = useInitiativeCountsQuery(projectKey);
 
   useEffect(() => {

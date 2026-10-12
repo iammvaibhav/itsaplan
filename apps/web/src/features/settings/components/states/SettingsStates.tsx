@@ -3,7 +3,8 @@ import { closestCenter, DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { type Column, type ProjectDetail, type StateType, type WipMode } from '@/lib/api';
+import type { Column, StateType, WipMode } from '@/lib/api/endpoints/columns';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import { useDndSensors } from '@/lib/dnd';
 import { STATE_TYPES } from '@/utils/fieldOptions';
 import { DEFAULT_COLOR } from '@/utils/project';
@@ -44,9 +45,9 @@ export default function SettingsStates({ project }: { project: ProjectDetail }) 
   const tStateType = useTranslations('display.stateTypes');
   const sensors = useDndSensors();
   const can = useSettingsCan();
-  const createColumn = useCreateColumn(project.project.key);
-  const updateColumn = useUpdateColumn(project.project.key);
-  const reorderColumns = useReorderColumns(project.project.key);
+  const createColumn = useCreateColumn(project.project.ref);
+  const updateColumn = useUpdateColumn(project.project.ref);
+  const reorderColumns = useReorderColumns(project.project.ref);
 
   const issueCount = (columnId: number) =>
     project.issues.filter((t) => t.columnId === columnId).length;

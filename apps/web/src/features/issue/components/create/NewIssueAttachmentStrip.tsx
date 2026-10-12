@@ -1,5 +1,5 @@
 import { type PendingAttachment } from '../../hooks/useNewIssueAttachments';
-import { type Embeddable } from '../../utils/attachmentEmbed';
+import { type Embeddable } from '@/components/common/editor/attachmentEmbed';
 import NewIssueAttachmentChip from './NewIssueAttachmentChip';
 
 // Files waiting to be uploaded once the issue is created. They preview from
@@ -23,10 +23,7 @@ export default function NewIssueAttachmentStrip({
   return (
     <>
       <span className="h-6 w-px shrink-0 bg-border" />
-      {/* The padding is the room each chip's overhanging remove button needs:
-          scrolling this box would clip anything outside it. Vertically it is
-          symmetric, so the chips stay on the footer's centre line. */}
-      <div className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto py-2 pr-2">
+      <div className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto py-2 pe-2">
         {items.map((item) => (
           <NewIssueAttachmentChip
             key={item.id}

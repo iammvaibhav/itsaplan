@@ -10,7 +10,22 @@ See root `AGENTS.md` for monorepo-wide rules.
   regenerate with `bun run auth:generate` (from the auth package / root).
 - `src/schema/app.ts` — hand-written application tables. Add domain tables here.
 - `src/schema/index.ts` — re-exports every table; `drizzle.config.ts` points at it.
-- `src/migrate.ts` — programmatic migrator run on api container startup (no drizzle-kit in prod).
+- `src/permissions.ts` — the permission matrix stored in `team_role.permissions`: the
+  resource/action catalog, the default member role, and the normalizer.
+- `src/settings.ts` / `src/secrets.ts` — the two instance config stores: `app_setting`
+  in plaintext jsonb, `app_secret` encrypted with `APP_ENCRYPTION_KEY`. Both are read
+  by more than one app, which is why they are here.
+- `src/domains/` — one module per stored config that more than one process reads: its
+  shape, its defaults and the reader that decrypts it. Only that. The write side, the
+  redacted view an HTTP client gets, the validation and anything else specific to one
+  caller stay with that caller — the api's settings routes, or god mode in
+  `@repo/auth`. A config only one process reads does not belong here at all.
+  Currently: the instance Telegram bot (api, bot, worker), the instance mail provider
+  (`@repo/auth`, api, worker), a team's notification providers (api, worker), and the
+  instance's upload limits and project-storage-quota accounting (api, worker — an
+  imported attachment is checked against the same limits an interactive upload is).
+- `src/migrate.ts` — programmatic migrator (no drizzle-kit in prod), run by the `migrate` compose service, the api pods' init container, and the api image's CMD.
+- `src/wait-for-migrations.ts` — exits once the database holds this release's migrations; the Helm init container of the worker and bot pods.
 - `drizzle/` — generated SQL migrations (committed).
 
 ## Workflow
@@ -22,12 +37,34 @@ See root `AGENTS.md` for monorepo-wide rules.
 Migrations only — never `drizzle-kit push`. Every schema change goes through a
 committed migration in `drizzle/`.
 
+## Team-owned agents
+
+An AI agent is a row in `ai_agent` with a `team_id` and a `user_id`: the team that owns
+it, and the bot user it acts as. The team is the boundary — there is no instance-level
+agent and no flag on `user` marking a non-human identity, so anything that has to
+enumerate agents does it through `ai_agent`.
+
+What the team owns with it: `agent_skill`, `agent_tool` and `integration_credential`
+all carry a `team_id` and are shared by every project of the team. `agent_schedule` and
+`agent_run` carry a `project_id` — a run happens in one project.
+
+The projects an agent works in are its bot user's `project_member` rows, the same as for
+a person, and the `role_id` on each of them is what its requests are checked against —
+per project, so one agent can hold different roles in two of them. Its rights in a
+project are the intersection of that role and the actions in `ai_agent.tools`.
+`team_member.role` takes a fourth value, `'agent'`, so an agent stands in the team
+without being a person in it.
+
+`ai_agent_team_username_uq` makes the mention handle unique per team, not per project.
+
 ## Revision engine
 
 `revision` holds one counter per scope — the change markers the clients poll through
 `GET /sync/rev`. Nothing in the application writes them: the triggers in
 `drizzle/0070_revision_triggers.sql` do, so a write moves the marker whichever
-process it came from.
+process it came from. `rev_issue()` is redefined in `0142_issue_key_alias.sql`: an
+issue moved to another project bumps the board of both projects, and its `issue:`
+scope row takes the new project id.
 
 To make a new table move an existing scope, add one line to a migration:
 

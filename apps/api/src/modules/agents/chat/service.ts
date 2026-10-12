@@ -1,10 +1,19 @@
-import { db, agentChatEvent, agentChatMessage, agentChatThread } from '@repo/db';
-import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { db, agentChatEvent, agentChatFavorite, agentChatMessage, agentChatThread } from '@repo/db';
+import { and, asc, desc, eq, gt, inArray, notExists, sql } from 'drizzle-orm';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { iso } from '#shared/lib';
+import { intEnv, iso } from '#shared/lib';
+import { deleteContextUsage, recordContextUsage, type ContextUsage } from '../chat-usage';
+import { deleteFavorite, FAVORITES_LIMIT } from '../chat-favorites';
+import {
+  likePattern,
+  searchTerm,
+  snippetOf,
+  summarize,
+  type ThreadListOpts,
+  type ThreadRow,
+} from '../chat-history';
 import { appendTextPart } from '../chat-parts';
-import { intEnv } from '../core/helpers/env';
-import { chartPreamble, projectPreamble } from '../core/prompt/framing';
+import { attachmentPreamble, chartPreamble, projectsPreamble } from '../core/prompt/framing';
 import { peoplePreamble, type Person } from '../core/prompt/run-context';
 import type { ChatMessagePage, ChatPart, ChatThreadPage } from '../model';
 import { newChatThreadId } from '../core/runtime/thread-ids';
@@ -29,7 +38,7 @@ export const agentChatConfig = {
   maxAttempts: () => intEnv('AGENT_CHAT_MAX_ATTEMPTS', 3),
   // How long a claim waits for work before it answers "nothing", and how often it looks
   // while it waits. The wait is what makes an answer start the moment it is sent.
-  claimWaitMs: () => intEnv('AGENT_CHAT_CLAIM_WAIT_MS', 25_000),
+  claimWaitMs: () => Math.min(intEnv('AGENT_CHAT_CLAIM_WAIT_MS', 25_000), 30_000),
   claimPollMs: () => intEnv('AGENT_CHAT_CLAIM_POLL_MS', 500),
   streamPollMs: () => intEnv('AGENT_CHAT_STREAM_POLL_MS', 300),
   historyMessages: () => intEnv('AGENT_CHAT_HISTORY_MESSAGES', 20),
@@ -48,28 +57,147 @@ const EVENT_PAGE = 500;
 // these take events, heartbeats and a result.
 const LIVE_STATUSES = ['pending', 'streaming'];
 
-// One page of the caller's conversations with one external agent, newest first.
+// The caller's conversations with one external agent: the favorites group, the hits of
+// a search, or one page of the rest of them, newest first.
 export async function listThreads(
   userId: string,
   agentId: number,
-  page = 0,
+  opts: ThreadListOpts = {},
 ): Promise<ChatThreadPage> {
+  if (opts.favorites) return favoriteThreads(userId, agentId);
+  const term = searchTerm(opts.q);
+  const page = opts.page ?? 0;
+  const rows = term
+    ? await searchThreads(userId, agentId, term, page)
+    : await unstarredPage(userId, agentId, page);
+  const hasMore = rows.length > PAGE_SIZE;
+  const items = await summarize(hasMore ? rows.slice(0, PAGE_SIZE) : rows);
+  return { items, nextPage: hasMore ? page + 1 : null };
+}
+
+// The conversations the caller starred, newest first, in one go.
+async function favoriteThreads(userId: string, agentId: number): Promise<ChatThreadPage> {
   const rows = await db
-    .select()
+    .select(threadColumns)
     .from(agentChatThread)
-    .where(and(eq(agentChatThread.agentId, agentId), eq(agentChatThread.userId, userId)))
+    .innerJoin(agentChatFavorite, eq(agentChatFavorite.threadId, agentChatThread.id))
+    .where(
+      and(
+        eq(agentChatThread.agentId, agentId),
+        eq(agentChatThread.userId, userId),
+        eq(agentChatFavorite.userId, userId),
+      ),
+    )
+    .orderBy(desc(agentChatThread.updatedAt))
+    .limit(FAVORITES_LIMIT);
+  return {
+    items: await summarize(rows.map((row) => ({ ...row, favorite: true }))),
+    nextPage: null,
+  };
+}
+
+const threadColumns = {
+  id: agentChatThread.id,
+  title: agentChatThread.title,
+  cliSessionId: agentChatThread.cliSessionId,
+  createdAt: agentChatThread.createdAt,
+  updatedAt: agentChatThread.updatedAt,
+};
+
+// One page of the conversations that are not starred, newest first, with one row over
+// the page to tell whether there is another. The starred ones are left out because the
+// group above the list already holds them.
+async function unstarredPage(userId: string, agentId: number, page: number): Promise<ThreadRow[]> {
+  const rows = await db
+    .select(threadColumns)
+    .from(agentChatThread)
+    .where(
+      and(
+        eq(agentChatThread.agentId, agentId),
+        eq(agentChatThread.userId, userId),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(agentChatFavorite)
+            .where(
+              and(
+                eq(agentChatFavorite.userId, userId),
+                eq(agentChatFavorite.threadId, agentChatThread.id),
+              ),
+            ),
+        ),
+      ),
+    )
     .orderBy(desc(agentChatThread.updatedAt))
     .limit(PAGE_SIZE + 1)
     .offset(page * PAGE_SIZE);
-  const hasMore = rows.length > PAGE_SIZE;
-  const items = (hasMore ? rows.slice(0, PAGE_SIZE) : rows).map((r) => ({
-    id: r.id,
-    title: r.title && r.title.length > 0 ? r.title : null,
-    cliSessionId: r.cliSessionId,
-    createdAt: iso(r.createdAt),
-    updatedAt: iso(r.updatedAt),
-  }));
-  return { items, nextPage: hasMore ? page + 1 : null };
+  return rows.map((row) => ({ ...row, favorite: false }));
+}
+
+// The conversations whose title or messages contain the term. A tool call is not
+// searched: its arguments and its result are events of their own, and the message text
+// holds only what the agent wrote.
+//
+// The snippet is cut from the newest matching message, in the database — an answer runs
+// to ANSWER_LIMIT characters. The rank puts a title hit first, then the ones where the
+// member's own message matches, then the ones matching only in the agent's reply.
+async function searchThreads(
+  userId: string,
+  agentId: number,
+  term: string,
+  page: number,
+): Promise<ThreadRow[]> {
+  const like = likePattern(term);
+  const snippet = snippetOf(sql`msg.content`, term);
+  const rows = await db.execute(sql`
+    SELECT t.id,
+           t.title,
+           t.cli_session_id AS "cliSessionId",
+           t.created_at AS "createdAt",
+           t.updated_at AS "updatedAt",
+           f.thread_id IS NOT NULL AS favorite,
+           hit.snippet,
+           CASE
+             WHEN t.title ILIKE ${like} THEN 1
+             WHEN coalesce(hit.user_match, false) THEN 2
+             ELSE 3
+           END AS rank
+    FROM agent_chat_thread t
+    LEFT JOIN agent_chat_favorite f ON f.thread_id = t.id AND f.user_id = t.user_id
+    LEFT JOIN LATERAL (
+      SELECT bool_or(msg.role = 'user') AS user_match,
+             (array_agg(${snippet} ORDER BY msg.id DESC))[1] AS snippet
+      FROM agent_chat_message msg
+      WHERE msg.thread_id = t.id AND msg.content ILIKE ${like}
+    ) hit ON true
+    WHERE t.agent_id = ${agentId}
+      AND t.user_id = ${userId}
+      AND (t.title ILIKE ${like} OR hit.snippet IS NOT NULL)
+    ORDER BY rank, t.updated_at DESC
+    LIMIT ${PAGE_SIZE + 1} OFFSET ${page * PAGE_SIZE}
+  `);
+  return rows as unknown as ThreadRow[];
+}
+
+// Whether the conversation is the caller's own, and with this agent where the caller
+// names one. False is a 404 for everything a thread is addressed by.
+export async function ownsThread(
+  threadId: string,
+  userId: string,
+  agentId?: number,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: agentChatThread.id })
+    .from(agentChatThread)
+    .where(
+      and(
+        eq(agentChatThread.id, threadId),
+        eq(agentChatThread.userId, userId),
+        ...(agentId != null ? [eq(agentChatThread.agentId, agentId)] : []),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 // One page of a thread's transcript, oldest first within the page, page 0 being the
@@ -197,16 +325,10 @@ export async function deleteThread(threadId: string, userId: string): Promise<bo
     .delete(agentChatThread)
     .where(and(eq(agentChatThread.id, threadId), eq(agentChatThread.userId, userId)))
     .returning({ id: agentChatThread.id });
-  return rows.length > 0;
-}
-
-async function ownsThread(threadId: string, userId: string): Promise<boolean> {
-  const rows = await db
-    .select({ id: agentChatThread.id })
-    .from(agentChatThread)
-    .where(and(eq(agentChatThread.id, threadId), eq(agentChatThread.userId, userId)))
-    .limit(1);
-  return rows.length > 0;
+  if (rows.length === 0) return false;
+  await deleteContextUsage(threadId);
+  await deleteFavorite(threadId);
+  return true;
 }
 
 // Stores the member's message and queues the answer next to it. A thread id continues
@@ -306,7 +428,7 @@ export async function claimNextMessage(agent: RunnerAgent): Promise<ClaimedChat 
     const message = await claimMessage(agent);
     if (message) return message;
     if (Date.now() >= deadline) return null;
-    await sleep(agentChatConfig.claimPollMs());
+    await sleep(Math.min(agentChatConfig.claimPollMs(), Math.max(0, deadline - Date.now())));
   }
 }
 
@@ -314,33 +436,62 @@ export async function claimNextMessage(agent: RunnerAgent): Promise<ClaimedChat 
 // a previous attempt produced: the answer is generated again from the start, and the
 // browser would otherwise read the abandoned half twice.
 async function claimMessage(agent: RunnerAgent): Promise<ClaimedChat | null> {
-  const rows = await db.execute(sql`
-    UPDATE agent_chat_message m
-    SET attempts = m.attempts + 1,
-        status = 'streaming',
-        content = '',
-        started_at = coalesce(m.started_at, now()),
-        next_attempt_at = now() + make_interval(secs => ${agentChatConfig.leaseSeconds()})
-    WHERE m.id = (
-      SELECT id FROM agent_chat_message q
-      WHERE q.agent_id = ${agent.id}
-        AND q.role = 'assistant'
-        AND q.status IN ('pending', 'streaming')
-        AND q.next_attempt_at <= now()
-      ORDER BY q.next_attempt_at, q.id
-      FOR UPDATE SKIP LOCKED
+  const rows = await db.transaction(async (tx) => {
+    const threads = await tx.execute(sql`
+      WITH live_heads AS MATERIALIZED (
+        SELECT q.thread_id, min(q.id) AS id FROM agent_chat_message q
+        WHERE q.agent_id = ${agent.id}
+          AND q.role = 'assistant'
+          AND q.status IN ('pending', 'streaming')
+        GROUP BY q.thread_id
+      ), ready_heads AS MATERIALIZED (
+        SELECT h.thread_id FROM live_heads h
+        JOIN agent_chat_message head ON head.id = h.id
+        WHERE head.next_attempt_at <= now()
+          AND head.attempts < ${agentChatConfig.maxAttempts()}
+        ORDER BY head.next_attempt_at, head.id
+      )
+      SELECT t.id FROM ready_heads h
+      CROSS JOIN LATERAL (
+        SELECT t.id FROM agent_chat_thread t
+        WHERE t.id = h.thread_id AND t.agent_id = ${agent.id}
+        FOR UPDATE SKIP LOCKED
+      ) t
       LIMIT 1
-    )
-    RETURNING
-      m.id,
-      m.thread_id AS "threadId",
-      m.attempts,
-      (SELECT u.name FROM agent_chat_thread t JOIN "user" u ON u.id = t.user_id
-         WHERE t.id = m.thread_id) AS "requesterName",
-      (SELECT u.username FROM agent_chat_thread t JOIN "user" u ON u.id = t.user_id
-         WHERE t.id = m.thread_id) AS "requesterUsername",
-      (SELECT cli_session_id FROM agent_chat_thread t WHERE t.id = m.thread_id) AS "sessionId"
-  `);
+    `);
+    const thread = (threads as unknown as { id: string }[])[0];
+    if (!thread) return [];
+    // Re-read the first unfinished answer after taking the thread lock: a concurrent
+    // claim may have committed while the thread selection used an earlier snapshot.
+    return tx.execute(sql`
+      UPDATE agent_chat_message m
+      SET attempts = m.attempts + 1,
+          status = 'streaming',
+          content = '',
+          started_at = coalesce(m.started_at, now()),
+          next_attempt_at = now() + make_interval(secs => ${agentChatConfig.leaseSeconds()})
+      WHERE m.id = (
+        SELECT q.id FROM agent_chat_message q
+        WHERE q.thread_id = ${thread.id}
+          AND q.role = 'assistant'
+          AND q.status IN ('pending', 'streaming')
+        ORDER BY q.id
+        LIMIT 1
+      )
+        AND m.status IN ('pending', 'streaming')
+        AND m.next_attempt_at <= now()
+        AND m.attempts < ${agentChatConfig.maxAttempts()}
+      RETURNING
+        m.id,
+        m.thread_id AS "threadId",
+        m.attempts,
+        (SELECT u.name FROM agent_chat_thread t JOIN "user" u ON u.id = t.user_id
+           WHERE t.id = m.thread_id) AS "requesterName",
+        (SELECT u.username FROM agent_chat_thread t JOIN "user" u ON u.id = t.user_id
+           WHERE t.id = m.thread_id) AS "requesterUsername",
+        (SELECT cli_session_id FROM agent_chat_thread t WHERE t.id = m.thread_id) AS "sessionId"
+    `);
+  });
   const row = (rows as unknown as ClaimedRow[])[0];
   if (!row) return null;
   await db.delete(agentChatEvent).where(eq(agentChatEvent.messageId, row.id));
@@ -413,15 +564,17 @@ async function readHistory(
   return rows.reverse();
 }
 
-// What the agent is told before the task: the project, that a person is waiting in a
-// chat, who that person is, and last the operator's own instructions, which therefore
-// win over the generic parts.
+// What the agent is told before the task: the projects it works in, that a person is
+// waiting in a chat, who that person is, and last the operator's own instructions,
+// which therefore win over the generic parts. A chat is held with the agent rather
+// than inside a project, so every project it reaches is named.
 function buildSystemPrompt(agent: RunnerAgent, requester: Person): string {
   const instructions = agent.instructions?.trim();
   return (
-    projectPreamble({ key: agent.projectKey, name: agent.projectName }) +
+    projectsPreamble(agent.projects) +
     chatModePreamble() +
     chartPreamble() +
+    attachmentPreamble() +
     peoplePreamble({ requester }) +
     (instructions ? `## Instructions\n${instructions}\n` : '')
   );
@@ -551,7 +704,11 @@ export async function cancelMessage(
 export async function finishMessage(
   agentId: number,
   messageId: number,
-  result: { status: 'success' | 'failed'; error?: string | null },
+  result: {
+    status: 'success' | 'failed';
+    error?: string | null;
+    usage?: ContextUsage | null;
+  },
 ): Promise<boolean> {
   await touchRunner(agentId);
   const rows = await db
@@ -563,8 +720,15 @@ export async function finishMessage(
       finishedAt: new Date(),
     })
     .where(liveAnswer(agentId, messageId))
-    .returning({ id: agentChatMessage.id });
-  if (rows.length > 0) return true;
+    .returning({ id: agentChatMessage.id, threadId: agentChatMessage.threadId });
+  if (rows.length > 0) {
+    // Undefined is a runner that said nothing about the context — an older one, or a
+    // command that reports no counts at all — and the thread keeps the number it has.
+    if (result.usage !== undefined) {
+      await recordContextUsage(rows[0].threadId, agentId, result.usage);
+    }
+    return true;
+  }
   // Stopped from the chat while the command was ending: the answer is already closed,
   // so there is nothing to record and nothing wrong.
   return wasCanceled(agentId, messageId);

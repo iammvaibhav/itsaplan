@@ -1,14 +1,16 @@
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, afterEach, beforeEach } from 'bun:test';
 import { apiKeyApi, authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { untaggedRoutes } from '#tests/helpers/mcp';
+import { createAgent, projectIdOf, teamOf } from '#tests/helpers/agents';
+import { clearLimits, setLimits } from '#tests/helpers/limits';
 
 // A schedule sends a fixed task to an internal agent on a cron, in UTC. The worker
 // picks up the queued runs, so a run created here stays pending. Access is the
 // ai_agents permission resource.
 
-const schedules = (api: Api) => api.projects({ projectKey: 'MKT' })['agent-schedules'];
+const schedules = (api: Api, projectKey = 'MKT') => api.projects({ projectKey })['agent-schedules'];
 
 async function setup() {
   const owner = await signUpTestUser({ name: 'Owner' });
@@ -17,11 +19,11 @@ async function setup() {
   return { asOwner };
 }
 
-async function createAgent(
+async function makeAgent(
   api: Api,
   opts: { username?: string; kind?: 'internal' | 'external'; projectKey?: string } = {},
 ): Promise<number> {
-  const res = await api.projects({ projectKey: opts.projectKey ?? 'MKT' })['ai-agents'].post({
+  const res = await createAgent(api, opts.projectKey ?? 'MKT', {
     name: 'Triage Bot',
     username: opts.username ?? 'triage',
     kind: opts.kind ?? 'internal',
@@ -44,7 +46,7 @@ async function addSecondOwner(asOwner: Api): Promise<Api> {
 // An external agent plus a client authenticated as its runner, which is how a run gets
 // claimed (and stamped as started) without a worker.
 async function createRunnerAgent(api: Api): Promise<{ agentId: number; asRunner: Api }> {
-  const res = await api.projects({ projectKey: 'MKT' })['ai-agents'].post({
+  const res = await createAgent(api, 'MKT', {
     name: 'Runner Bot',
     username: 'runner',
     kind: 'external',
@@ -52,12 +54,16 @@ async function createRunnerAgent(api: Api): Promise<{ agentId: number; asRunner:
   return { agentId: res.data!.agent.id, asRunner: apiKeyApi(res.data!.apiKey!) };
 }
 
-async function createSchedule(api: Api, agentId: number, cron = '0 9 * * *') {
-  return schedules(api).post({
+async function createSchedule(
+  api: Api,
+  agentId: number,
+  opts: { cron?: string; projectKey?: string } = {},
+) {
+  return schedules(api, opts.projectKey).post({
     agentId,
     name: 'Daily triage',
     prompt: 'Triage the new issues.',
-    cron,
+    cron: opts.cron ?? '0 9 * * *',
   });
 }
 
@@ -65,10 +71,33 @@ describe('agent schedules', () => {
   beforeEach(async () => {
     await resetDb();
   });
+  afterEach(clearLimits);
+
+  it('refuses a cron that fires more often than the limits allow', async () => {
+    const { asOwner } = await setup();
+    const agentId = await makeAgent(asOwner);
+    setLimits({ minScheduleIntervalSeconds: 3600 });
+
+    const tooOften = await createSchedule(asOwner, agentId, { cron: '*/5 * * * *' });
+    expect(tooOften.status).toBe(400);
+
+    // The floor is read from the shortest gap ahead, not from the first one: this
+    // cron waits a day before the second of its two daily runs.
+    const burst = await createSchedule(asOwner, agentId, { cron: '0,1 9 * * *' });
+    expect(burst.status).toBe(400);
+
+    const created = await createSchedule(asOwner, agentId, { cron: '0 9 * * *' });
+    expect(created.status).toBe(201);
+
+    const patched = await schedules(asOwner)({ scheduleId: created.data!.id }).patch({
+      cron: '*/5 * * * *',
+    });
+    expect(patched.status).toBe(400);
+  });
 
   it('creates a schedule and lists it with its next run', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner);
+    const agentId = await makeAgent(asOwner);
     const created = await createSchedule(asOwner, agentId);
     expect(created.status).toBe(201);
     expect(created.data).toMatchObject({
@@ -81,24 +110,51 @@ describe('agent schedules', () => {
       lastRunAt: null,
       lastRunStatus: null,
     });
-    expect(new Date(created.data!.nextRunAt).getTime()).toBeGreaterThan(Date.now());
+    expect(new Date(created.data!.nextRunAt!).getTime()).toBeGreaterThan(Date.now());
 
     const list = await schedules(asOwner).get();
     expect(list.status).toBe(200);
-    expect(list.data).toHaveLength(1);
-    expect(list.data?.[0].id).toBe(created.data!.id);
+    expect(list.data?.items).toHaveLength(1);
+    expect(list.data?.items[0].id).toBe(created.data!.id);
+  });
+
+  it('pages the schedule list, newest first', async () => {
+    const { asOwner } = await setup();
+    const agentId = await makeAgent(asOwner);
+    const made = [];
+    for (const name of ['One', 'Two', 'Three']) {
+      made.push(
+        await schedules(asOwner).post({ agentId, name, prompt: 'Triage.', cron: '0 9 * * *' }),
+      );
+    }
+    const [first, , newest] = made;
+
+    const page = await schedules(asOwner).get({ query: { page: 1, pageSize: 2 } });
+    expect(page.data).toMatchObject({ total: 3, page: 1, pageSize: 2 });
+    expect(page.data?.items[0].id).toBe(newest.data!.id);
+
+    const last = await schedules(asOwner).get({ query: { page: 2, pageSize: 2 } });
+    expect(last.data?.items.map((s) => s.id)).toEqual([first.data!.id]);
+  });
+
+  it('rejects a name the agent already has a schedule under', async () => {
+    const { asOwner } = await setup();
+    const agentId = await makeAgent(asOwner);
+    await createSchedule(asOwner, agentId);
+    const res = await createSchedule(asOwner, agentId);
+    expect(res.status).toBe(409);
   });
 
   it('rejects an invalid cron expression', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner);
-    const res = await createSchedule(asOwner, agentId, 'not a cron');
+    const agentId = await makeAgent(asOwner);
+    const res = await createSchedule(asOwner, agentId, { cron: 'not a cron' });
     expect(res.status).toBe(400);
   });
 
   it('rejects a blank name', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner);
+    const agentId = await makeAgent(asOwner);
     const res = await schedules(asOwner).post({
       agentId,
       name: ' ',
@@ -108,17 +164,42 @@ describe('agent schedules', () => {
     expect(res.status).toBe(400);
   });
 
+  it('frees the schedule name again in another project of the team', async () => {
+    const { asOwner } = await setup();
+    const agentId = await makeAgent(asOwner);
+    const teamId = await teamOf(asOwner, 'MKT');
+    const marketingId = await projectIdOf(asOwner, 'MKT');
+    const ops = await asOwner.teams({ teamId }).projects.post({ key: 'OPS', name: 'Ops' });
+    await asOwner
+      .teams({ teamId })
+      ['ai-agents']({ agentId })
+      .projects.put({ projectIds: [marketingId, ops.data!.id] });
+    expect((await createSchedule(asOwner, agentId)).status).toBe(201);
+
+    const second = await createSchedule(asOwner, agentId, { projectKey: 'OPS' });
+    expect(second.status).toBe(201);
+  });
+
+  it('refuses a second schedule of the same name on one agent in one project', async () => {
+    const { asOwner } = await setup();
+    const agentId = await makeAgent(asOwner);
+    expect((await createSchedule(asOwner, agentId)).status).toBe(201);
+
+    const duplicate = await createSchedule(asOwner, agentId);
+    expect(duplicate.status).toBe(409);
+  });
+
   it('schedules an external agent, whose runner claims the run', async () => {
     const { asOwner } = await setup();
-    const externalId = await createAgent(asOwner, { username: 'hook', kind: 'external' });
+    const externalId = await makeAgent(asOwner, { username: 'hook', kind: 'external' });
     expect((await createSchedule(asOwner, externalId)).status).toBe(201);
   });
 
   it("keeps an 'owner'-scoped agent's tasks to its owner", async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner, { username: 'hook', kind: 'external' });
+    const agentId = await makeAgent(asOwner, { username: 'hook', kind: 'external' });
     await asOwner
-      .projects({ projectKey: 'MKT' })
+      .teams({ teamId: await teamOf(asOwner, 'MKT') })
       ['ai-agents']({ agentId })
       .patch({ runnerScope: 'owner' });
     const asSecond = await addSecondOwner(asOwner);
@@ -132,40 +213,52 @@ describe('agent schedules', () => {
     expect(
       (await schedules(asSecond)({ scheduleId: own.data!.id }).runs.cancel.post()).status,
     ).toBe(403);
-    expect((await schedules(asSecond).get()).data?.[0]).toMatchObject({ canTrigger: false });
-    expect((await schedules(asOwner).get()).data?.[0]).toMatchObject({ canTrigger: true });
+    expect((await schedules(asSecond).get()).data?.items[0]).toMatchObject({ canTrigger: false });
+    expect((await schedules(asOwner).get()).data?.items[0]).toMatchObject({ canTrigger: true });
   });
 
   it('rejects an agent of another project', async () => {
     const { asOwner } = await setup();
 
     await asOwner.projects.post({ key: 'ENG', name: 'Engineering' });
-    const foreignId = await createAgent(asOwner, { username: 'eng', projectKey: 'ENG' });
+    const foreignId = await makeAgent(asOwner, { username: 'eng', projectKey: 'ENG' });
     expect((await createSchedule(asOwner, foreignId)).status).toBe(400);
   });
 
   it('pauses a schedule and moves the next run when it is resumed', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner);
+    const agentId = await makeAgent(asOwner);
     const created = await createSchedule(asOwner, agentId);
     const scheduleId = created.data!.id;
 
     const paused = await schedules(asOwner)({ scheduleId }).patch({ status: 'paused' });
     expect(paused.status).toBe(200);
     expect(paused.data).toMatchObject({ status: 'paused' });
-    expect(new Date(paused.data!.nextRunAt).getTime()).toBe(
-      new Date(created.data!.nextRunAt).getTime(),
+    expect(new Date(paused.data!.nextRunAt!).getTime()).toBe(
+      new Date(created.data!.nextRunAt!).getTime(),
     );
 
     const resumed = await schedules(asOwner)({ scheduleId }).patch({ status: 'active' });
     expect(resumed.data).toMatchObject({ status: 'active' });
-    expect(new Date(resumed.data!.nextRunAt).getTime()).toBeGreaterThan(Date.now());
+    expect(new Date(resumed.data!.nextRunAt!).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('keeps a paused schedule paused when a patch leaves the status out', async () => {
+    const { asOwner } = await setup();
+    const agentId = await makeAgent(asOwner);
+    const created = await createSchedule(asOwner, agentId);
+    const schedule = schedules(asOwner)({ scheduleId: created.data!.id });
+    expect((await schedule.patch({ status: 'paused' })).data?.status).toBe('paused');
+
+    const edited = await schedule.patch({ prompt: 'Triage the new issues.' });
+    expect(edited.status).toBe(200);
+    expect(edited.data?.status).toBe('paused');
   });
 
   it('recomputes the next run when the cron changes', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner);
-    const created = await createSchedule(asOwner, agentId, '0 9 * * *');
+    const agentId = await makeAgent(asOwner);
+    const created = await createSchedule(asOwner, agentId);
     const updated = await schedules(asOwner)({ scheduleId: created.data!.id }).patch({
       cron: '30 9 * * *',
       prompt: 'Triage and label the new issues.',
@@ -175,12 +268,12 @@ describe('agent schedules', () => {
       cron: '30 9 * * *',
       prompt: 'Triage and label the new issues.',
     });
-    expect(new Date(updated.data!.nextRunAt).getUTCMinutes()).toBe(30);
+    expect(new Date(updated.data!.nextRunAt!).getUTCMinutes()).toBe(30);
   });
 
   it('queues a manual run and reports it in the run history', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner);
+    const agentId = await makeAgent(asOwner);
     const created = await createSchedule(asOwner, agentId);
     const scheduleId = created.data!.id;
 
@@ -201,13 +294,57 @@ describe('agent schedules', () => {
     });
   });
 
+  it('shows the token counts of each run of a schedule', async () => {
+    const { asOwner } = await setup();
+    const { agentId, asRunner } = await createRunnerAgent(asOwner);
+    const scheduleId = (await createSchedule(asOwner, agentId)).data!.id;
+    const runs = () => schedules(asOwner)({ scheduleId }).runs.get();
+
+    await schedules(asOwner)({ scheduleId }).run.post();
+    const first = (await asRunner['agent-runs'].claim.post()).data!.run!;
+    await asRunner['agent-runs']({ runId: first.id }).result.post({
+      status: 'success',
+      output: 'Triaged.',
+      usage: { inputTokens: 30_000, outputTokens: 400 },
+    });
+    expect((await runs()).data![0].contextTokens).toBe(30_400);
+
+    // Each run carries its own counts, so a later one does not restate the one before.
+    await schedules(asOwner)({ scheduleId }).run.post();
+    const second = (await asRunner['agent-runs'].claim.post()).data!.run!;
+    await asRunner['agent-runs']({ runId: second.id }).result.post({
+      status: 'success',
+      output: 'Triaged again.',
+      usage: { inputTokens: 12_000, outputTokens: 100 },
+    });
+    const both = (await runs()).data!;
+    expect(both.map((r) => r.contextTokens)).toEqual([12_100, 30_400]);
+  });
+
+  it('leaves a run without counts where its runner reports none', async () => {
+    const { asOwner } = await setup();
+    const { agentId, asRunner } = await createRunnerAgent(asOwner);
+    const scheduleId = (await createSchedule(asOwner, agentId)).data!.id;
+
+    await schedules(asOwner)({ scheduleId }).run.post();
+    const run = (await asRunner['agent-runs'].claim.post()).data!.run!;
+    await asRunner['agent-runs']({ runId: run.id }).result.post({
+      status: 'success',
+      output: 'Done.',
+    });
+
+    expect(
+      (await schedules(asOwner)({ scheduleId }).runs.get()).data![0].contextTokens,
+    ).toBeUndefined();
+  });
+
   it('ends every pending run of a schedule', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner, { username: 'hook', kind: 'external' });
+    const agentId = await makeAgent(asOwner, { username: 'hook', kind: 'external' });
     const scheduleId = (await createSchedule(asOwner, agentId)).data!.id;
     await schedules(asOwner)({ scheduleId }).run.post();
     await schedules(asOwner)({ scheduleId }).run.post();
-    expect((await schedules(asOwner).get()).data?.[0]).toMatchObject({ pendingRuns: 2 });
+    expect((await schedules(asOwner).get()).data?.items[0]).toMatchObject({ pendingRuns: 2 });
 
     const canceled = await schedules(asOwner)({ scheduleId }).runs.cancel.post();
     expect(canceled.status).toBe(200);
@@ -216,7 +353,7 @@ describe('agent schedules', () => {
     const runs = await schedules(asOwner)({ scheduleId }).runs.get();
     expect(runs.data?.map((run) => run.status)).toEqual(['canceled', 'canceled']);
     expect(runs.data?.[0].finishedAt).not.toBeNull();
-    expect((await schedules(asOwner).get()).data?.[0]).toMatchObject({
+    expect((await schedules(asOwner).get()).data?.items[0]).toMatchObject({
       pendingRuns: 0,
       lastRunStatus: 'canceled',
     });
@@ -229,7 +366,7 @@ describe('agent schedules', () => {
 
   it('ends one pending run and 404s on it afterwards', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner, { username: 'hook', kind: 'external' });
+    const agentId = await makeAgent(asOwner, { username: 'hook', kind: 'external' });
     const scheduleId = (await createSchedule(asOwner, agentId)).data!.id;
     const kept = (await schedules(asOwner)({ scheduleId }).run.post()).data!.runId;
     const runId = (await schedules(asOwner)({ scheduleId }).run.post()).data!.runId;
@@ -253,7 +390,7 @@ describe('agent schedules', () => {
     await schedules(asOwner)({ scheduleId }).run.post();
     const runId = (await asRunner['agent-runs'].claim.post()).data!.run!.id;
 
-    expect((await schedules(asOwner).get()).data?.[0]).toMatchObject({ pendingRuns: 0 });
+    expect((await schedules(asOwner).get()).data?.items[0]).toMatchObject({ pendingRuns: 0 });
     expect((await schedules(asOwner)({ scheduleId }).runs.cancel.post()).data).toMatchObject({
       canceled: 0,
     });
@@ -267,15 +404,16 @@ describe('agent schedules', () => {
 
   it('deletes a schedule with its runs and 404s on it afterwards', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner);
+    const agentId = await makeAgent(asOwner);
     const scheduleId = (await createSchedule(asOwner, agentId)).data!.id;
     await schedules(asOwner)({ scheduleId }).run.post();
+    const teamId = await teamOf(asOwner, 'MKT');
     const agentRuns = () =>
-      asOwner.projects({ projectKey: 'MKT' })['ai-agents']({ agentId }).runs.get({ query: {} });
+      asOwner.teams({ teamId })['ai-agents']({ agentId }).runs.get({ query: {} });
     expect((await agentRuns()).data?.items).toHaveLength(1);
 
     expect((await schedules(asOwner)({ scheduleId }).delete()).status).toBe(204);
-    expect((await schedules(asOwner).get()).data).toEqual([]);
+    expect((await schedules(asOwner).get()).data?.items).toEqual([]);
     expect((await schedules(asOwner)({ scheduleId }).delete()).status).toBe(404);
     expect((await agentRuns()).data?.items).toEqual([]);
   });
@@ -294,7 +432,7 @@ describe('agent schedules', () => {
 
   it('denies a non-member', async () => {
     const { asOwner } = await setup();
-    const agentId = await createAgent(asOwner);
+    const agentId = await makeAgent(asOwner);
     const scheduleId = (await createSchedule(asOwner, agentId)).data!.id;
     const outsider = await signUpTestUser({ name: 'Outsider' });
     const asOutsider = authedApi(outsider.cookie);

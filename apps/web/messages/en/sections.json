@@ -15,9 +15,17 @@
       "label": "Users",
       "description": "Every account on this instance: the global role, whether the address is confirmed, and the projects each user can reach."
     },
+    "teams": {
+      "label": "Teams",
+      "description": "Every team on this instance: the projects it owns and who belongs to it."
+    },
     "projects": {
       "label": "Projects",
       "description": "Every project on this instance: what each one holds, when it was last active, and who can reach it."
+    },
+    "general": {
+      "label": "General",
+      "description": "Personal workspaces, defaults for new projects, and agent traces."
     },
     "authentication": {
       "label": "Authentication",
@@ -42,16 +50,16 @@
     "auth-provider": {
       "label": "Auth provider",
       "description": "The external accounts people may sign in with."
+    },
+    "scim": {
+      "label": "SCIM",
+      "description": "Let an identity provider create, update and deactivate accounts on this instance, and grant project access through its groups."
     }
   },
   "settings": {
     "general": {
       "label": "General",
       "description": "The project's name, description, and the sections it shows."
-    },
-    "notifications": {
-      "label": "Notification providers",
-      "description": "The email (SMTP or Resend) and Telegram bot credentials this project delivers notifications through."
     },
     "states": {
       "label": "States",
@@ -68,6 +76,10 @@
     "custom-fields": {
       "label": "Custom fields",
       "description": "Extra fields shown on issues, global or scoped to an issue type."
+    },
+    "issue-templates": {
+      "label": "Issue templates",
+      "description": "Presets a new issue can be created from: its title, description, and properties."
     },
     "configuration": {
       "label": "Configuration",
@@ -89,21 +101,13 @@
       "label": "Repositories",
       "description": "Close issues when their pull requests merge on GitHub, GitLab, Gitea, Forgejo, or Bitbucket."
     },
+    "import-export": {
+      "label": "Import/Export",
+      "description": "Bring issues, comments, and labels in from a self-hosted Plane instance, or export this project's data as JSON."
+    },
     "ai-agents": {
-      "label": "Agents",
-      "description": "Bot users you can delegate issues to."
-    },
-    "integrations": {
-      "label": "Integrations",
-      "description": "Credentials your agents use to reach AI providers and tools."
-    },
-    "agent-skills": {
-      "label": "Skills",
-      "description": "Reusable instructions internal agents load on demand."
-    },
-    "agent-tools": {
-      "label": "Tools",
-      "description": "Tools agents can call, each connected to an integration credential."
+      "label": "AI Agents",
+      "description": "AI agents working in this project."
     }
   }
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import type { ActionDef, ActionEffect, ProjectDetail, CustomField } from '@/lib/api';
+import type { ActionDef, ActionEffect } from '@/lib/api/endpoints/actions';
+import type { CustomField } from '@/lib/api/endpoints/customFields';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import {
   useActionsQuery,
   useCreateAction,
@@ -32,7 +34,7 @@ export default function SettingsActions({
   onNewHandled: () => void;
 }) {
   const t = useTranslations('settings.actions');
-  const projectKey = project.project.key;
+  const projectKey = project.project.ref;
   const actionsQuery = useActionsQuery(projectKey);
   const actions = actionsQuery.data ?? [];
   const createAction = useCreateAction(projectKey);

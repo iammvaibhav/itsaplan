@@ -7,7 +7,7 @@ import { addUser, createAgentUser, joinProject, setup } from '../helpers';
 // projects the caller is not a member of, which no project-scoped route may do, so
 // they sit behind the god guard like the rest of the plugin.
 
-const PAGE = { limit: 50, offset: 0 };
+const PAGE = { page: 1, pageSize: 50 };
 
 describe('god projects', () => {
   beforeEach(async () => {
@@ -40,7 +40,7 @@ describe('god projects', () => {
       expect(res.data?.items[0]).toMatchObject({
         key: 'ALC',
         name: 'Alice Only',
-        mcpEnabled: false,
+        mcpEnabled: true,
         memberCount: 1,
         issueCount: 0,
       });
@@ -75,7 +75,6 @@ describe('god projects', () => {
         viewCount: 0,
         skillCount: 0,
         toolCount: 0,
-        integrationCount: 0,
       });
       // Creating the issue wrote its first feed entry.
       expect(row.lastActivityAt).not.toBeNull();
@@ -120,8 +119,8 @@ describe('god projects', () => {
       await god.api.projects.post({ key: 'TWO', name: 'Two' });
       await god.api.projects.post({ key: 'THR', name: 'Three' });
 
-      const first = await god.api.god.projects.get({ query: { limit: 2, offset: 0 } });
-      const second = await god.api.god.projects.get({ query: { limit: 2, offset: 2 } });
+      const first = await god.api.god.projects.get({ query: { page: 1, pageSize: 2 } });
+      const second = await god.api.god.projects.get({ query: { page: 2, pageSize: 2 } });
 
       expect(first.data?.items).toHaveLength(2);
       expect(second.data?.items).toHaveLength(1);
@@ -132,11 +131,15 @@ describe('god projects', () => {
       expect(new Set(paged).size).toBe(3);
     });
 
-    it('rejects a limit outside the allowed range', async () => {
+    it('rejects a page size outside the allowed range', async () => {
       const { god } = await setup();
 
-      expect((await god.api.god.projects.get({ query: { ...PAGE, limit: 0 } })).status).toBe(400);
-      expect((await god.api.god.projects.get({ query: { ...PAGE, limit: 500 } })).status).toBe(400);
+      expect((await god.api.god.projects.get({ query: { ...PAGE, pageSize: 0 } })).status).toBe(
+        400,
+      );
+      expect((await god.api.god.projects.get({ query: { ...PAGE, pageSize: 500 } })).status).toBe(
+        400,
+      );
     });
   });
 

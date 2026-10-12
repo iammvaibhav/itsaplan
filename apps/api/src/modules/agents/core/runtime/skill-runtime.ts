@@ -2,9 +2,9 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { getSkillMarkdown, getSkillRefContent, type SkillRow } from '../../skills/service';
 
-// Wires a project's skills into an internal agent run using progressive disclosure:
-// the system prompt lists only each enabled skill's name and description, and a
-// read_skill tool loads the full SKILL.md (or a reference file) from the object
+// Wires the skills of the agent's team into an internal agent run using progressive
+// disclosure: the system prompt lists only each enabled skill's name and description,
+// and a read_skill tool loads the full SKILL.md (or a reference file) from the object
 // store when the agent decides it is relevant. This keeps token cost low regardless
 // of how many skills are enabled.
 
@@ -29,9 +29,9 @@ export function skillsPreamble(skills: SkillRow[]): string {
 }
 
 // A read_skill tool restricted to the agent's enabled skills. Reads the SKILL.md by
-// default, or a named reference file. Reading is scoped to (projectId, enabled ids)
-// so an agent cannot pull skills it was not granted.
-export function buildSkillTool(projectId: number, skills: SkillRow[]) {
+// default, or a named reference file. Reading is scoped to (teamId, enabled ids) so
+// an agent cannot pull skills it was not granted.
+export function buildSkillTool(teamId: number, skills: SkillRow[]) {
   const allowed = new Set(skills.map((s) => s.id));
   return {
     read_skill: createTool({
@@ -53,8 +53,8 @@ export function buildSkillTool(projectId: number, skills: SkillRow[]) {
         }
         try {
           const content = path
-            ? await getSkillRefContent(skillId, projectId, path)
-            : await getSkillMarkdown(skillId, projectId);
+            ? await getSkillRefContent(skillId, teamId, path)
+            : await getSkillMarkdown(skillId, teamId);
           return { content };
         } catch {
           return { error: 'Could not read that skill or reference file.' };

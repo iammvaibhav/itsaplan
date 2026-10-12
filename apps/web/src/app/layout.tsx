@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { Providers } from '@/components/providers';
 import RuntimeEnvScript from '@/components/runtime-env-script';
+import WhatsNew from '@/features/whats-new/WhatsNew';
 import { localeDirection, type Locale } from '@/i18n/locales';
 import './globals.css';
 
@@ -34,7 +35,10 @@ export default async function RootLayout({
           storageKey="itsaplan-theme"
         >
           <NextIntlClientProvider>
-            <Providers>{children}</Providers>
+            <Providers>
+              {children}
+              <WhatsNew />
+            </Providers>
           </NextIntlClientProvider>
         </ThemeProvider>
       </body>

@@ -1,15 +1,16 @@
 import type { ReactNode } from 'react';
-import { GOD_COLUMN_CLASS } from '@/utils/godSections';
+import { GodSectionExtras } from '@/cloud';
 import { useGodSectionText } from '@/hooks/useSectionLabels';
 import SectionPageView from '@/components/common/page/SectionPageView';
 
 // The chrome shared by every god section page: title and description taken from the
-// section entry. `widthClassName` defaults to the settings column; the directory
-// pages override it to span the whole shell, because their tables are wide.
+// section entry, and below the content what the hosted build adds to the section. The
+// directory pages pass a `widthClassName` that spans the whole shell, because their
+// tables are wide.
 export default function GodSectionPage({
   slug,
   actions,
-  widthClassName = GOD_COLUMN_CLASS,
+  widthClassName,
   children,
 }: {
   slug: string;
@@ -22,11 +23,11 @@ export default function GodSectionPage({
     <SectionPageView
       title={section.label}
       description={section.description}
-      wide
       widthClassName={widthClassName}
       actions={actions}
     >
       {children}
+      <GodSectionExtras slug={slug} />
     </SectionPageView>
   );
 }

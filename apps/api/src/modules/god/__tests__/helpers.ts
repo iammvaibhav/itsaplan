@@ -1,5 +1,6 @@
 import { authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
+import { createAgent } from '#tests/helpers/agents';
 
 // Actors and the flows both god directory tests need. The first user in a reset
 // database gets the "god" role, so `setup` registers the instance owner first and
@@ -36,7 +37,7 @@ export async function joinProject(
 
 // Creates an external AI agent on the given project and returns its bot user id.
 export async function createAgentUser(owner: Actor, projectKey: string): Promise<string> {
-  const created = await owner.api.projects({ projectKey })['ai-agents'].post({
+  const created = await createAgent(owner.api, projectKey, {
     name: 'Webhook Bot',
     username: 'webhook',
     kind: 'external',

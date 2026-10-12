@@ -5,6 +5,7 @@
 // the dashboards feature consumes them.
 
 import { EMPTY_FILTER_SET, type FilterSet } from '@/utils/filters';
+import { uuid } from '@/utils/uuid';
 
 export type WidgetType =
   | 'stat'
@@ -12,6 +13,7 @@ export type WidgetType =
   | 'activity_feed'
   | 'pulse'
   | 'throughput'
+  | 'burnup'
   | 'breakdown'
   | 'agent_runs'
   | 'agent_health'
@@ -30,6 +32,11 @@ export const ROW_GAP = 16; // px between rows
 export const MIN_W = 2;
 export const MIN_H = 2;
 
+// Below this container width a half-width widget is too narrow to read anything
+// in, so the grid drops to STACK_COLS columns (see stackLayout).
+export const STACK_WIDTH = 640;
+export const STACK_COLS = 2;
+
 // Per-type config. All fields optional — a widget renders with catalog defaults
 // when its config is missing (an older layout, or a freshly added widget).
 export interface WidgetConfig {
@@ -45,6 +52,7 @@ export interface WidgetConfig {
   // activity_feed
   action?: string | null;
   // pulse — the heatmap bucket unit; the window auto-fits the widget width
+  pulseScope?: 'project' | 'me';
   granularity?: 'hour' | 'day' | 'week';
   // throughput
   weeks?: number;
@@ -52,8 +60,14 @@ export interface WidgetConfig {
   by?: BreakdownBy;
   // agent_runs — the run status filter (null = all)
   runStatus?: 'pending' | 'success' | 'failed' | null;
-  // agent_health and webhook_health — the window in days
+  // agent_health, webhook_health and burnup — the window in days
   days?: number;
+  // burnup — one initiative, or null for the whole project
+  initiativeId?: number | null;
+  // burnup — how many recent weeks the closing rate is taken from
+  forecastWeeks?: number;
+  // burnup — a single projection line, or a range of about ±40% around it
+  forecast?: 'line' | 'range';
 }
 
 export interface WidgetInstance {
@@ -82,6 +96,12 @@ export const WIDGET_DEFAULTS: Record<
   activity_feed: { w: 6, h: 7, minH: 3, config: { limit: 20 } },
   pulse: { w: 12, h: 5, minH: 5, config: { granularity: 'day' } },
   throughput: { w: 6, h: 6, minH: 5, config: { weeks: 12 } },
+  burnup: {
+    w: 6,
+    h: 6,
+    minH: 5,
+    config: { days: 90, initiativeId: null, forecastWeeks: 4, forecast: 'range' },
+  },
   breakdown: { w: 6, h: 6, minH: 5, config: { by: 'status' } },
   agent_runs: { w: 6, h: 7, minH: 3, config: { limit: 20 } },
   agent_health: { w: 3, h: 3, minH: 3, config: { days: 30 } },
@@ -93,7 +113,7 @@ export const WIDGET_DEFAULTS: Record<
 // Placed at the origin; the editor drops it at the bottom of the current layout.
 export function createWidget(type: WidgetType): WidgetInstance {
   const d = WIDGET_DEFAULTS[type];
-  return { id: crypto.randomUUID(), type, x: 0, y: 0, w: d.w, h: d.h, config: { ...d.config } };
+  return { id: uuid(), type, x: 0, y: 0, w: d.w, h: d.h, config: { ...d.config } };
 }
 
 // Legacy layouts stored a `size` of 'full' | 'half' | 'quarter' instead of `w`.
@@ -156,6 +176,29 @@ export function normalizeLayout(layout: unknown): DashboardLayout {
     const placed = { ...it, x, y };
     x += it.w;
     rowH = Math.max(rowH, it.h);
+    return placed;
+  });
+}
+
+// The saved layout laid out for a narrow screen: widgets keep their reading order
+// (top row first, then left to right), a tile that took a quarter of the desktop
+// width or less takes one column, and everything wider takes the full width.
+// Derived on render — what is stored stays the desktop layout.
+export function stackLayout(layout: DashboardLayout): DashboardLayout {
+  const ordered = [...layout].sort((a, b) => a.y - b.y || a.x - b.x);
+  let x = 0;
+  let y = 0;
+  let rowHeight = 0;
+  return ordered.map((widget) => {
+    const w = widget.w <= GRID_COLS / 4 ? 1 : STACK_COLS;
+    if (x + w > STACK_COLS) {
+      x = 0;
+      y += rowHeight;
+      rowHeight = 0;
+    }
+    const placed = { ...widget, x, y, w };
+    x += w;
+    rowHeight = Math.max(rowHeight, widget.h);
     return placed;
   });
 }

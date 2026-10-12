@@ -1,22 +1,12 @@
 {
-  "label": "Manage projects",
-  "title": "Manage projects",
-  "description": "Every project you belong to, with your permissions in each. Copy one to start a new project from its setup. Owners can delete a project; members can leave one. Deleting permanently removes the project and everything in it.",
-  "empty": "You are not a member of any project yet.",
-  "columns": {
-    "project": "Project",
-    "role": "Role",
-    "permissions": "Permissions",
-    "actions": "Actions"
-  },
-  "yourPermissions": "Your permissions",
+  "editAction": "Edit project",
   "copyAction": "Copy project",
   "deleteAction": "Delete project",
   "leaveAction": "Leave project",
-  "roles": {
-    "owner": "Owner",
-    "member": "Member"
-  },
+  "archiveAction": "Archive project",
+  "restoreAction": "Restore project",
+  "archived": "{name} archived",
+  "restored": "{name} restored",
   "deleteDialog": {
     "title": "Delete {name}?",
     "confirm": "Delete permanently",
@@ -27,5 +17,13 @@
     "title": "Leave {name}?",
     "confirm": "Leave project",
     "description": "You will lose access to <strong>{name}</strong> and its work items. To join again you need a new invite from an owner."
+  },
+  "editDialog": {
+    "title": "Edit project",
+    "key": "Key",
+    "keyHint": "Issue links need a key of capital letters and digits that starts with a letter. After you save it, the key cannot change.",
+    "name": "Name",
+    "description": "Description",
+    "submit": "Save"
   }
 }

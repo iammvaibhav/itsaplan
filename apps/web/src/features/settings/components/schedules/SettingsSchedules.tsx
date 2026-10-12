@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { AgentSchedule, AgentScheduleInput, ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { AgentSchedule, AgentScheduleInput } from '@/lib/api/endpoints/agentSchedules';
+import { ScheduleDialog } from '@/cloud';
 import { aiAgentsPath } from '@/utils/paths';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/common/page/EmptyState';
+import ListPager from '@/components/common/ListPager';
+import { usePaging } from '@/hooks/usePaging';
 import ListSkeleton from '@/components/common/skeleton/ListSkeleton';
 import {
   useAgentSchedules,
@@ -13,10 +17,9 @@ import {
   useRunAgentSchedule,
   useUpdateAgentSchedule,
 } from '@/services/agentSchedules.service';
-import { useAiAgentsQuery } from '@/services/aiAgents.service';
+import { useProjectAgents } from '@/hooks/useProjectAgents';
 import { useSettingsCan } from '../../context/settingsPermission';
 import SettingsConfirmDeleteDialog from '../crud/SettingsConfirmDeleteDialog';
-import { SettingsScheduleDialog } from './SettingsScheduleDialog';
 import { SettingsScheduleRunsSheet } from './SettingsScheduleRunsSheet';
 import { SettingsSchedulesTable } from './SettingsSchedulesTable';
 import { useTranslations } from 'next-intl';
@@ -31,11 +34,13 @@ export default function SettingsSchedules({
   onNewHandled: () => void;
 }) {
   const t = useTranslations('settings.schedules');
-  const projectKey = project.project.key;
+  const projectKey = project.project.ref;
   const can = useSettingsCan();
-  const schedulesQuery = useAgentSchedules(projectKey);
-  const agentsQuery = useAiAgentsQuery(projectKey);
-  const schedules = schedulesQuery.data ?? [];
+  const paging = usePaging();
+  const schedulesQuery = useAgentSchedules(projectKey, paging.params);
+  const agentsQuery = useProjectAgents();
+  const schedules = schedulesQuery.data?.items ?? [];
+  const total = schedulesQuery.data?.total ?? 0;
   const agents = agentsQuery.data ?? [];
   const createSchedule = useCreateAgentSchedule(projectKey);
   const updateSchedule = useUpdateAgentSchedule(projectKey);
@@ -105,6 +110,7 @@ export default function SettingsSchedules({
         <div className="space-y-4">
           <SettingsSchedulesTable
             schedules={schedules}
+            columns={project.columns}
             runningId={runSchedule.isPending ? (runSchedule.variables ?? null) : null}
             onToggle={(schedule) =>
               updateSchedule.mutate({
@@ -118,14 +124,16 @@ export default function SettingsSchedules({
             onEdit={setEditing}
             onDelete={setDeleting}
           />
+          <ListPager paging={paging} total={total} />
         </div>
       )}
 
       {showEditor && (
-        <SettingsScheduleDialog
+        <ScheduleDialog
           key={editingSchedule?.id ?? 'new'}
           projectKey={projectKey}
           agents={agents}
+          columns={project.columns}
           initial={editingSchedule}
           saving={saving}
           onSave={saveSchedule}
@@ -151,6 +159,7 @@ export default function SettingsSchedules({
       <SettingsScheduleRunsSheet
         projectKey={projectKey}
         schedule={history}
+        columnName={project.columns.find((column) => column.id === history?.columnId)?.name ?? null}
         onClose={() => setHistory(null)}
       />
     </>

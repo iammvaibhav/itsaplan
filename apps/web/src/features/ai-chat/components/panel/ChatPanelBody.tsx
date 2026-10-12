@@ -1,7 +1,7 @@
 'use client';
 
-import { memo } from 'react';
-import { useAiAgentsQuery } from '@/services/aiAgents.service';
+import { memo, useEffect } from 'react';
+import { useProjectAgents } from '@/hooks/useProjectAgents';
 import { AiChatThreadSkeleton } from '../shared/AiChatThreadSkeleton';
 import { ChatPanelEmpty } from './ChatPanelEmpty';
 import { ChatPanelSession } from './ChatPanelSession';
@@ -12,10 +12,18 @@ import { useProviderLabel } from '../../hooks/useProviderLabel';
 // What the chat panel holds under its header: the open sessions and the tab row over
 // them. Memoised because resizing the panel re-renders it on every pointer move, and a
 // render here reaches every transcript.
-export const ChatPanelBody = memo(function ChatPanelBody({ projectKey }: { projectKey: string }) {
-  const agentsQuery = useAiAgentsQuery(projectKey);
+export const ChatPanelBody = memo(function ChatPanelBody({
+  projectKey,
+  newChatAgentId,
+  onNewChatHandled,
+}: {
+  projectKey: string;
+  newChatAgentId: number | null;
+  onNewChatHandled: () => void;
+}) {
+  const agentsQuery = useProjectAgents();
   const agents = agentsQuery.data ?? [];
-  const providerLabel = useProviderLabel(projectKey);
+  const providerLabel = useProviderLabel();
   const {
     sessions,
     active,
@@ -30,6 +38,14 @@ export const ChatPanelBody = memo(function ChatPanelBody({ projectKey }: { proje
     setAgent,
     setState,
   } = useChatSessions(projectKey, agents[0]?.id ?? null);
+
+  // A page asked for a chat with one agent: it opens as a tab of its own, so whatever
+  // is already open stays.
+  useEffect(() => {
+    if (newChatAgentId == null) return;
+    openTab(newChatAgentId);
+    onNewChatHandled();
+  }, [newChatAgentId, openTab, onNewChatHandled]);
 
   // A session that has said nothing changes its agent in place; one with a transcript
   // keeps it, and the other agent is chatted with in a tab of its own.

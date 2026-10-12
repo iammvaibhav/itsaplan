@@ -3,10 +3,25 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, type Project } from '@/lib/api';
+import {
+  type Project,
+  getBoardIssues,
+  getProject,
+  listProjects,
+} from '@/lib/api/endpoints/projects';
+import { listViews } from '@/lib/api/endpoints/views';
 import { useSession } from '@/lib/auth-client';
 import { qk } from '@/services/queryKeys';
 import { projectPath } from '@/utils/paths';
+
+// Paseo names a project by its bare key (unique while the instance has one team);
+// the app names it by ref ("<teamRef>.<key>"). A bare key goes through the
+// /project/<KEY> redirect upstream keeps for old links.
+function embedProjectPath(keyOrRef: string): string {
+  return keyOrRef.includes('.')
+    ? projectPath(keyOrRef)
+    : `/project/${encodeURIComponent(keyOrRef)}`;
+}
 
 declare global {
   interface Window {
@@ -42,19 +57,19 @@ export default function PaseoEmbedBridge() {
     const prefetchProject = (projectKey: string) => {
       const trimmed = projectKey?.trim();
       if (!signedIn || !trimmed) return;
-      const path = `/project/${encodeURIComponent(trimmed)}`;
+      const path = embedProjectPath(trimmed);
       router.prefetch(path);
       void qc.prefetchQuery({
         queryKey: qk.project(trimmed),
-        queryFn: () => api.getProject(trimmed),
+        queryFn: () => getProject(trimmed),
       });
       void qc.prefetchQuery({
         queryKey: qk.boardIssues(trimmed),
-        queryFn: () => api.getBoardIssues(trimmed),
+        queryFn: () => getBoardIssues(trimmed),
       });
       void qc.prefetchQuery({
         queryKey: qk.views(trimmed),
-        queryFn: () => api.listViews(trimmed),
+        queryFn: () => listViews(trimmed),
       });
     };
 
@@ -65,11 +80,11 @@ export default function PaseoEmbedBridge() {
       void qc
         .fetchQuery({
           queryKey: qk.projects,
-          queryFn: () => api.listProjects({ permissions: true }),
+          queryFn: () => listProjects(),
         })
         .then((projects: Project[]) => {
           for (const project of projects) {
-            prefetchProject(project.key);
+            prefetchProject(project.ref);
           }
         })
         .finally(() => {
@@ -79,7 +94,7 @@ export default function PaseoEmbedBridge() {
 
     const navigateProject = (projectKey: string) => {
       const trimmed = projectKey?.trim();
-      router.push(trimmed ? projectPath(trimmed) : '/');
+      router.push(trimmed ? embedProjectPath(trimmed) : '/');
     };
 
     window.__paseo_itsaplan = {

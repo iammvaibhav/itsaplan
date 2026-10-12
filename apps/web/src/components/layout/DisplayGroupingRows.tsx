@@ -1,6 +1,6 @@
 import { ArrowDownNarrowWide, ArrowUpNarrowWide } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { CustomField } from '@/lib/api';
+import type { CustomField } from '@/lib/api/endpoints/customFields';
 import { SORT_FIELDS, type SortField, type WorkItemsView } from '@/utils/viewTypes';
 import {
   customFieldKey,
@@ -153,6 +153,13 @@ export default function DisplayGroupingRows({
                 <Checkbox
                   checked={settings.separateSubtasks}
                   onCheckedChange={(c) => onChange({ separateSubtasks: c === true })}
+                />
+              </DisplaySettingsRow>
+
+              <DisplaySettingsRow label={t('startSubtasksCollapsed')}>
+                <Checkbox
+                  checked={settings.collapseSubtasks}
+                  onCheckedChange={(c) => onChange({ collapseSubtasks: c === true })}
                 />
               </DisplaySettingsRow>
 

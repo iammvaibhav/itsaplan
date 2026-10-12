@@ -1,10 +1,18 @@
 import { createTool } from '@mastra/core/tools';
 import type { z } from 'zod';
 import type { ProjectRow } from '#modules/projects/service';
-import { routeTools, type McpInputSchema, type McpRouteTool } from '#mcp/generate';
+import { routeTools, withoutFields, type McpInputSchema, type McpRouteTool } from '#mcp/generate';
+import type { Permission } from '#shared/guards';
 import { dispatchTool } from '#mcp/dispatch';
 import { getMcpApp } from '#mcp/app-ref';
-import { ALWAYS_ON_KEYS, normalizeToolKeys, toolMeta } from './catalog';
+import {
+  AGENT_ACTIONS,
+  ALWAYS_ON_ACTIONS,
+  ALWAYS_ON_KEYS,
+  normalizeToolKeys,
+  toolMeta,
+  type ToolMeta,
+} from './catalog';
 
 // The tools an internal agent uses to work in its project, built from the routes
 // tagged with mcpTool() — the same table the MCP endpoint serves. A tool call is
@@ -14,7 +22,7 @@ import { ALWAYS_ON_KEYS, normalizeToolKeys, toolMeta } from './catalog';
 // agent gets and binds them to its project.
 //
 // An agent's rights are therefore the intersection of two things: the actions it was
-// granted (catalog.ts, stored in ai_agent.tools) and what its project role permits.
+// granted (catalog.ts, stored in ai_agent.tools) and what its team role permits.
 // A tool it holds but its role forbids returns the route's normal 403.
 
 // Mastra accepts a JSON Schema wrapped in the ai-sdk schema protocol: an object
@@ -37,16 +45,6 @@ function jsonSchemaInput(schema: McpInputSchema): z.ZodType<Record<string, unkno
   } as unknown as z.ZodType<Record<string, unknown>>;
 }
 
-function omitFields(schema: McpInputSchema, names: string[]): McpInputSchema {
-  const properties = { ...schema.properties };
-  for (const name of names) delete properties[name];
-  return {
-    type: 'object',
-    properties,
-    required: schema.required.filter((name) => !names.includes(name)),
-  };
-}
-
 // A route answers with JSON; a 204 answers with nothing. Anything else is handed to
 // the model as-is rather than crashing the run.
 function parseBody(text: string): unknown {
@@ -56,6 +54,17 @@ function parseBody(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+// The catalog list_ai_agent_tools returns: each action with the permission its route
+// asserts, so a caller can tell which role an action needs. An action with no route
+// behind it, or one whose route asks only for project membership, has none.
+export function actionCatalog(): (ToolMeta & { permission?: Permission })[] {
+  const byName = new Map(routeTools(getMcpApp()).map((route) => [route.name, route]));
+  return [...AGENT_ACTIONS, ...ALWAYS_ON_ACTIONS].map((action) => ({
+    ...action,
+    permission: byName.get(action.key)?.permission,
+  }));
 }
 
 // Builds the route-backed tools for one agent, keyed by tool id. The read-only
@@ -92,7 +101,7 @@ function buildOne(
   // the catalog hides.
   const hidden = [...(overrides?.hide ?? [])];
   if (bindsProject) hidden.push('projectKey');
-  const schema = omitFields(route.inputSchema, hidden);
+  const schema = withoutFields(route.inputSchema, hidden);
 
   return createTool({
     id: route.name,
@@ -101,10 +110,14 @@ function buildOne(
     execute: async (input) => {
       const args: Record<string, unknown> = { ...input };
       for (const name of hidden) delete args[name];
-      if (bindsProject) args.projectKey = project.key;
-      const { text, isError } = await dispatchTool(getMcpApp(), route, args, apiKey, {
-        viaMcpEndpoint: false,
-      });
+      if (bindsProject) args.projectKey = project.ref;
+      const { text, isError } = await dispatchTool(
+        getMcpApp(),
+        route,
+        args,
+        { kind: 'api-key', apiKey },
+        { viaMcpEndpoint: false },
+      );
       const body = parseBody(text);
       // A route failure is returned to the model as a result rather than thrown, so
       // it can correct the call instead of the run aborting. Custom tools do the same.

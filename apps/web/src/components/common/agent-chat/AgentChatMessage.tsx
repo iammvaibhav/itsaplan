@@ -2,7 +2,7 @@
 
 import type { ChatMessage } from '@/hooks/useAgentChat';
 import { cn } from '@/lib/utils';
-import type { AiChatPart, AiChatToolPart } from '@/lib/api';
+import type { AiChatPart, AiChatToolPart } from '@/lib/api/endpoints/agentChat';
 import { formatLongDate, formatTime } from '@/utils/dates';
 import Markdown from '@/components/common/Markdown';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
@@ -10,6 +10,7 @@ import { Marker, MarkerContent } from '@/components/ui/marker';
 import { Message, MessageContent, MessageFooter } from '@/components/ui/message';
 import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import AgentChatToolCalls from './AgentChatToolCalls';
+import AgentChatUserText from './AgentChatUserText';
 import { useTranslations } from 'next-intl';
 
 type Block = { text: string } | { tools: AiChatToolPart[] };
@@ -33,9 +34,11 @@ function blocksOf(parts: AiChatPart[]): Block[] {
 export default function AgentChatMessage({
   message,
   showDate,
+  complete = true,
 }: {
   message: ChatMessage;
   showDate: boolean;
+  complete?: boolean;
 }) {
   const t = useTranslations('common.agentChat');
   const isUser = message.role === 'user';
@@ -60,9 +63,9 @@ export default function AgentChatMessage({
               ) : (
                 <BubbleContent key={index} className={cn(!isUser && 'w-full')}>
                   {isUser ? (
-                    <span className="whitespace-pre-wrap">{block.text}</span>
+                    <AgentChatUserText text={block.text} />
                   ) : (
-                    <Markdown>{block.text}</Markdown>
+                    <Markdown complete={complete}>{block.text}</Markdown>
                   )}
                 </BubbleContent>
               ),

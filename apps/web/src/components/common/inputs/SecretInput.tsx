@@ -12,14 +12,12 @@ export default function SecretInput({
   value,
   onChange,
   hasStored,
-  editable,
   placeholder,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   hasStored: boolean;
-  editable: boolean;
   placeholder?: string;
 }) {
   const t = useTranslations('common');
@@ -31,10 +29,11 @@ export default function SecretInput({
         type={reveal ? 'text' : 'password'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        disabled={!editable}
         placeholder={hasStored ? '••••••••••••' : placeholder}
         className="pr-9"
-        autoComplete="off"
+        // Browsers ignore "off" on a password field and fill the account's own login
+        // into it; "new-password" is the value they respect.
+        autoComplete="new-password"
       />
       <button
         type="button"

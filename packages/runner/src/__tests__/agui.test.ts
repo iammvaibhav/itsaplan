@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { AnswerStream, type AgUiEvent } from '../agui';
+import { AnswerStream, UsageReader, type AgUiEvent } from '../agui';
 
 // The adapter is what a chat answer is read through, and the coding agents it reads
 // print several shapes of the same thing, so the mapping is pinned here.
@@ -394,6 +394,129 @@ describe('answer stream', () => {
     expect(stream.startedSession()).toBe('c66bf000');
   });
 
+  it("reads pi's json as text, tool calls and the session header", async () => {
+    const sink = collect();
+    const stream = new AnswerStream('pi-json', 'chat:1:u:x', '7', sink.send);
+
+    stream.write(
+      [
+        JSON.stringify({ type: 'session', version: 3, id: 'sess-9' }),
+        JSON.stringify({
+          type: 'message_update',
+          usage: { input: 12, cacheRead: 80, output: 3 },
+          assistantMessageEvent: { type: 'text_delta', delta: 'Looking' },
+        }),
+        JSON.stringify({
+          type: 'tool_execution_start',
+          toolCallId: 'call_1',
+          toolName: 'read',
+          args: { path: 'alpha.txt' },
+        }),
+        JSON.stringify({
+          type: 'tool_execution_end',
+          toolCallId: 'call_1',
+          toolName: 'read',
+          result: { content: [{ type: 'text', text: 'hello from alpha' }] },
+          isError: false,
+        }),
+        JSON.stringify({
+          type: 'message_update',
+          usage: { input: 40, cacheRead: 80, output: 9 },
+          assistantMessageEvent: { type: 'text_delta', delta: ' it over.' },
+        }),
+        JSON.stringify({
+          type: 'message_end',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'Looking it over.' }] },
+        }),
+        '',
+      ].join('\n'),
+    );
+    await stream.finish('');
+
+    expect(types(sink.events)).toEqual([
+      'RUN_STARTED',
+      'TEXT_MESSAGE_START',
+      'TEXT_MESSAGE_CONTENT',
+      'TOOL_CALL_START',
+      'TOOL_CALL_ARGS',
+      'TOOL_CALL_END',
+      'TOOL_CALL_RESULT',
+      'TEXT_MESSAGE_CONTENT',
+      'TEXT_MESSAGE_END',
+      'RUN_FINISHED',
+    ]);
+    expect(text(sink.events)).toBe('Looking it over.');
+    expect(stream.startedSession()).toBe('sess-9');
+    expect(stream.contextUsage()).toEqual({ inputTokens: 120, outputTokens: 9 });
+    const result = sink.events.find((e) => e.type === 'TOOL_CALL_RESULT');
+    expect((result as { content: string }).content).toBe('hello from alpha');
+  });
+
+  it('ignores the user message_end pi emits before the assistant text', async () => {
+    const sink = collect();
+    const stream = new AnswerStream('pi-json', 'chat:1:u:x', '7', sink.send);
+
+    stream.write(
+      [
+        JSON.stringify({
+          type: 'message_end',
+          message: { role: 'user', content: [{ type: 'text', text: 'Reply with exactly: pong' }] },
+        }),
+        JSON.stringify({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'text_delta', delta: 'pong' },
+        }),
+        JSON.stringify({
+          type: 'message_end',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'pong' }] },
+        }),
+        '',
+      ].join('\n'),
+    );
+    await stream.finish('');
+
+    expect(text(sink.events)).toBe('pong');
+  });
+
+  it('takes the pi message_end text when no delta arrived', async () => {
+    const sink = collect();
+    const stream = new AnswerStream('pi-json', 'chat:1:u:x', '7', sink.send);
+
+    stream.write(
+      `${JSON.stringify({
+        type: 'message_end',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'All done.' }] },
+      })}\n`,
+    );
+    await stream.finish('');
+
+    expect(text(sink.events)).toBe('All done.');
+  });
+
+  it('keeps a long pi tool result inside the 32000 character chat limit', async () => {
+    const sink = collect();
+    const stream = new AnswerStream('pi-json', 'chat:1:u:x', '7', sink.send);
+    const body = `HEAD${'x'.repeat(40_000)}TAIL`;
+
+    stream.write(
+      `${JSON.stringify({
+        type: 'tool_execution_end',
+        toolCallId: 'call_1',
+        toolName: 'read',
+        result: { content: [{ type: 'text', text: body }] },
+        isError: false,
+      })}\n`,
+    );
+    await stream.finish('');
+
+    const result = sink.events.find((event) => event.type === 'TOOL_CALL_RESULT') as {
+      content: string;
+    };
+    expect(result.content.length).toBeLessThanOrEqual(32_000);
+    expect(result.content.startsWith('…')).toBe(true);
+    expect(result.content.endsWith('TAIL')).toBe(true);
+  });
+
   it('reports what a denied Copilot tool call said', async () => {
     const sink = collect();
     const stream = new AnswerStream('copilot-json', 'chat:1:u:x', '7', sink.send);
@@ -417,6 +540,7 @@ describe('answer stream', () => {
       'opencode-json',
       'antigravity-stream-json',
       'copilot-json',
+      'pi-json',
     ] as const) {
       const sink = collect();
       const stream = new AnswerStream(format, 'chat:1:u:x', '7', sink.send);
@@ -445,6 +569,11 @@ describe('answer stream', () => {
     const opencodeStream = new AnswerStream('opencode-json', 'chat:1:u:x', '7', opencode.send);
     opencodeStream.write(`${JSON.stringify({ type: 'step.started', sessionID: 'ses_9' })}\n`);
     expect(opencodeStream.startedSession()).toBe('ses_9');
+
+    const pi = collect();
+    const piStream = new AnswerStream('pi-json', 'chat:1:u:x', '7', pi.send);
+    piStream.write(`${JSON.stringify({ type: 'session', id: 'sess-9' })}\n`);
+    expect(piStream.startedSession()).toBe('sess-9');
   });
 
   it('keeps the first session it saw when later lines name another', async () => {
@@ -464,5 +593,199 @@ describe('answer stream', () => {
     stream.write('done\n');
 
     expect(stream.startedSession()).toBeNull();
+  });
+});
+
+// The context size is what the chat shows as the size of the conversation, so what each
+// command reports has to end up as the same pair of numbers, measured on the last model
+// call and never summed over the calls an answer took.
+describe('context size', () => {
+  it("adds Claude's cache reads to the tokens read, and keeps the last call", async () => {
+    const sink = collect();
+    const stream = new AnswerStream('claude-stream-json', 'chat:1:u:x', '7', sink.send);
+
+    stream.write(
+      [
+        JSON.stringify({
+          type: 'stream_event',
+          event: {
+            type: 'message_start',
+            message: { usage: { input_tokens: 4, output_tokens: 1 } },
+          },
+        }),
+        JSON.stringify({
+          type: 'stream_event',
+          event: { type: 'message_delta', usage: { output_tokens: 120 } },
+        }),
+        JSON.stringify({
+          type: 'stream_event',
+          event: {
+            type: 'message_start',
+            message: {
+              usage: {
+                input_tokens: 3000,
+                cache_read_input_tokens: 40_000,
+                cache_creation_input_tokens: 1945,
+                output_tokens: 1,
+              },
+            },
+          },
+        }),
+        JSON.stringify({
+          type: 'stream_event',
+          event: { type: 'message_delta', usage: { output_tokens: 300 } },
+        }),
+        '',
+      ].join('\n'),
+    );
+    await stream.finish('');
+
+    expect(stream.contextUsage()).toEqual({ inputTokens: 44_945, outputTokens: 300 });
+  });
+
+  it('takes the turn total Codex reports, the only number it has', async () => {
+    const sink = collect();
+    const stream = new AnswerStream('codex-jsonl', 'chat:1:u:x', '7', sink.send);
+
+    stream.write(
+      `${JSON.stringify({
+        type: 'turn.completed',
+        usage: { input_tokens: 46_356, cached_input_tokens: 20_000, output_tokens: 800 },
+      })}\n`,
+    );
+    await stream.finish('');
+
+    expect(stream.contextUsage()).toEqual({ inputTokens: 46_356, outputTokens: 800 });
+  });
+
+  it("adds opencode's cache and reasoning counts to the tokens the last step read", async () => {
+    const sink = collect();
+    const stream = new AnswerStream('opencode-json', 'chat:1:u:x', '7', sink.send);
+
+    stream.write(
+      [
+        JSON.stringify({
+          part: {
+            type: 'step-finish',
+            tokens: { input: 10, output: 20, cache: { read: 0, write: 0 } },
+          },
+        }),
+        JSON.stringify({
+          part: {
+            type: 'step-finish',
+            tokens: {
+              input: 1200,
+              output: 90,
+              reasoning: 40,
+              cache: { read: 30_000, write: 800 },
+            },
+          },
+        }),
+        '',
+      ].join('\n'),
+    );
+    await stream.finish('');
+
+    expect(stream.contextUsage()).toEqual({ inputTokens: 32_000, outputTokens: 130 });
+  });
+
+  it("adds Antigravity's cache reads and thinking tokens to the counts of its last step", async () => {
+    const sink = collect();
+    const stream = new AnswerStream('antigravity-stream-json', 'chat:1:u:x', '7', sink.send);
+
+    stream.write(
+      [
+        JSON.stringify({
+          event: 'step_update',
+          step_update: {
+            step_index: 1,
+            step_type: 'agent_response',
+            usage: {
+              input_tokens: 2000,
+              cache_read_tokens: 18_000,
+              output_tokens: 250,
+              thinking_tokens: 60,
+            },
+          },
+        }),
+        // The closing result carries the total of the turn; taking it would report the
+        // steps added up instead of the context.
+        JSON.stringify({
+          event: 'result',
+          usage: { input_tokens: 90_000, output_tokens: 4000 },
+          result: { conversation_id: 'c3b6', response: 'Done.' },
+        }),
+        '',
+      ].join('\n'),
+    );
+    await stream.finish('');
+
+    expect(stream.contextUsage()).toEqual({ inputTokens: 20_000, outputTokens: 310 });
+  });
+
+  it('says Copilot reports no context size, rather than saying nothing', async () => {
+    const sink = collect();
+    const stream = new AnswerStream('copilot-json', 'chat:1:u:x', '7', sink.send);
+
+    stream.write(`${JSON.stringify({ type: 'result', sessionId: 'abc' })}\n`);
+    await stream.finish('');
+
+    expect(stream.contextUsage()).toBeNull();
+  });
+
+  it('reports nothing for an answer that said nothing about its context', async () => {
+    const sink = collect();
+    const stream = new AnswerStream('claude-stream-json', 'chat:1:u:x', '7', sink.send);
+
+    stream.write(`${JSON.stringify({ type: 'result', result: 'Done.' })}\n`);
+    await stream.finish('Done.');
+
+    expect(stream.contextUsage()).toBeUndefined();
+  });
+});
+
+// A run streams nothing to a chat, so it reads the counts straight off the command's
+// output. The chat's stream owns a reader of the same kind, which the tests above cover.
+describe('usage of a run', () => {
+  it('reads the counts across the chunks the output arrived in', () => {
+    const reader = new UsageReader('claude-stream-json');
+    const line = JSON.stringify({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { usage: { input_tokens: 8000 } } },
+    });
+
+    reader.write(line.slice(0, 30));
+    reader.write(`${line.slice(30)}\n`);
+    // A last line the command wrote without a newline still counts.
+    reader.write(
+      JSON.stringify({
+        type: 'stream_event',
+        event: { type: 'message_delta', usage: { output_tokens: 120 } },
+      }),
+    );
+    reader.end();
+
+    expect(reader.value()).toEqual({ inputTokens: 8000, outputTokens: 120 });
+  });
+
+  it('reports nothing for an output that said nothing about its counts', () => {
+    const reader = new UsageReader('codex-jsonl');
+    reader.write(`${JSON.stringify({ type: 'thread.started', thread_id: '01a0' })}\n`);
+    reader.end();
+    expect(reader.value()).toBeUndefined();
+  });
+
+  it('says Copilot reports no counts, rather than saying nothing', () => {
+    const reader = new UsageReader('copilot-json');
+    reader.write('{"type":"result"}\n');
+    reader.end();
+    expect(reader.value()).toBeNull();
+  });
+
+  it('reads nothing from the plain output of a command with no format', () => {
+    const reader = new UsageReader('text');
+    reader.write('Done.\n');
+    reader.end();
+    expect(reader.value()).toBeUndefined();
   });
 });

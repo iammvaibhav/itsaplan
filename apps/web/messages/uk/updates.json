@@ -1,16 +1,12 @@
 {
   "updateAvailable": "Доступне оновлення",
   "releaseHistory": "Історія релізів",
-  "runningOutdated": "У вас {current}. Найновіша — {latest}.",
-  "runningUnknown": "У вас {current}. Найновіший реліз невідомий.",
-  "runningLatest": "У вас {current} — найновіший реліз.",
-  "noReleases": "Ця збірка не містить нотаток до релізів.",
+  "running": "У вас {current}.",
   "badgeRunning": "Поточна",
   "badgeNew": "Нове",
-  "earlier": "Попередні релізи",
   "check": "Перевірити оновлення",
   "checking": "Перевірка",
-  "lastChecked": "Перевірено {date}",
+  "lastChecked": "Перевірено",
   "allReleases": "Усі релізи",
   "noNotes": "Цей реліз без нотаток."
 }

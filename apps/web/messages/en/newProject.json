@@ -24,9 +24,9 @@
   "copyGroups": {
     "workflow": "Workflow",
     "automation": "Automation",
-    "project": "Project",
     "views": "Views",
-    "aiTeam": "AI Team"
+    "aiTeam": "AI Team",
+    "knowledge": "Knowledge"
   },
   "copyItems": {
     "states": "States",
@@ -35,14 +35,10 @@
     "customFields": "Custom fields",
     "views": "Views",
     "dashboards": "Dashboards",
+    "documents": "Docs",
     "actions": "Actions",
     "configuration": "Configuration",
-    "roles": "Roles",
-    "notificationProviders": "Notification providers",
     "webhooks": "Webhooks",
-    "integrations": "Integrations",
-    "tools": "Tools",
-    "skills": "Skills",
     "agents": "Agents",
     "schedules": "Schedules"
   },
@@ -50,5 +46,6 @@
   "copyTitle": "Copy project \"{name}\"",
   "create": "Create project",
   "copyAction": "Copy project",
+  "defaultAgents": "Agents joining this project: {names}",
   "copyName": "{name} copy"
 }

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'bun:test';
 import { authedApi } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
+import { createRole } from '#tests/helpers/roles';
+import { createAgent } from '#tests/helpers/agents';
 
 type Client = ReturnType<typeof authedApi>;
 
@@ -101,6 +103,22 @@ describe('note boards', () => {
 
       const read = await boards(owner.api)({ boardId }).get();
       expect(read.status).toBe(200);
+    });
+  });
+
+  describe('list', () => {
+    it('answers with every board the caller can see, and narrows it by name', async () => {
+      const owner = await setupOwnerProject();
+      for (let i = 1; i <= 12; i += 1) {
+        await boards(owner.api).post({ name: `Board ${i}` });
+      }
+      await boards(owner.api).post({ name: 'Roadmap' });
+
+      const all = await boards(owner.api).get();
+      expect(all.data).toHaveLength(13);
+
+      const found = await boards(owner.api).get({ query: { q: 'Roadmap' } });
+      expect(found.data?.map((b) => b.name)).toEqual(['Roadmap']);
     });
   });
 
@@ -219,9 +237,7 @@ describe('note boards', () => {
 
     it('rejects granting access to a member whose role cannot read notes', async () => {
       const owner = await setupOwnerProject();
-      const role = await owner.api
-        .projects({ projectKey: 'MKT' })
-        .roles.post({ name: 'No notes', permissions: {} });
+      const role = await createRole(owner.api, 'MKT', { name: 'No notes', permissions: {} });
       const member = await addMember(owner.api, { roleId: role.data!.id });
       const boardId = (await boards(owner.api).post({ name: 'Ideas' })).data!.id;
 
@@ -240,13 +256,13 @@ describe('note boards', () => {
     it('lists members and agents, flagging who may read notes', async () => {
       const owner = await setupOwnerProject();
       const member = await addMember(owner.api);
-      const role = await owner.api
-        .projects({ projectKey: 'MKT' })
-        .roles.post({ name: 'No notes', permissions: {} });
+      const role = await createRole(owner.api, 'MKT', { name: 'No notes', permissions: {} });
       const noNotes = await addMember(owner.api, { roleId: role.data!.id });
-      const agent = await owner.api
-        .projects({ projectKey: 'MKT' })
-        ['ai-agents'].post({ name: 'Bot', username: 'bot', kind: 'external' });
+      const agent = await createAgent(owner.api, 'MKT', {
+        name: 'Bot',
+        username: 'bot',
+        kind: 'external',
+      });
 
       const res = await boards(owner.api)['access-candidates'].get();
       expect(res.status).toBe(200);
@@ -259,12 +275,86 @@ describe('note boards', () => {
 
     it('holds a read-only role out of the candidate list', async () => {
       const owner = await setupOwnerProject();
-      const role = await owner.api
-        .projects({ projectKey: 'MKT' })
-        .roles.post({ name: 'Reader', permissions: { note_boards: { read: true } } });
+      const role = await createRole(owner.api, 'MKT', {
+        name: 'Reader',
+        permissions: { note_boards: { read: true } },
+      });
       const member = await addMember(owner.api, { roleId: role.data!.id });
 
       expect((await boards(member.api)['access-candidates'].get()).status).toBe(403);
+    });
+  });
+
+  describe('delete', () => {
+    it('lets the creator delete their board', async () => {
+      const owner = await setupOwnerProject();
+      const boardId = (await boards(owner.api).post({ name: 'Ideas' })).data!.id;
+
+      expect((await boards(owner.api)({ boardId }).delete()).status).toBe(204);
+      expect((await boards(owner.api)({ boardId }).get()).status).toBe(404);
+    });
+
+    it('keeps a granted member from deleting a board shared with them', async () => {
+      const owner = await setupOwnerProject();
+      const author = await addMember(owner.api);
+      const granted = await addMember(owner.api);
+      const boardId = (await boards(author.api).post({ name: 'Ideas' })).data!.id;
+      await boards(author.api)({ boardId }).patch({
+        visibility: 'restricted',
+        memberIds: [granted.userId],
+      });
+
+      const res = await boards(granted.api)({ boardId }).delete();
+      expect(res.status).toBe(403);
+      expect(res.error?.value).toEqual({
+        error: 'Only the board creator or a project owner can delete the board',
+      });
+      expect((await boards(author.api)({ boardId }).get()).status).toBe(200);
+    });
+
+    it('lets a member delete a public board they did not create', async () => {
+      const owner = await setupOwnerProject();
+      const member = await addMember(owner.api);
+      const boardId = (await boards(owner.api).post({ name: 'Ideas' })).data!.id;
+
+      expect((await boards(member.api)({ boardId }).delete()).status).toBe(204);
+      expect((await boards(owner.api)({ boardId }).get()).status).toBe(404);
+    });
+
+    it("lets a project owner delete a member's private board they cannot see", async () => {
+      const owner = await setupOwnerProject();
+      const author = await addMember(owner.api);
+      const boardId = (await boards(author.api).post({ name: 'Ideas' })).data!.id;
+      await boards(author.api)({ boardId }).patch({ visibility: 'private' });
+
+      expect((await boards(owner.api)({ boardId }).get()).status).toBe(404);
+      expect((await boards(owner.api)({ boardId }).delete()).status).toBe(204);
+      expect((await boards(author.api)({ boardId }).get()).status).toBe(404);
+    });
+
+    it("keeps a member from deleting another member's private board", async () => {
+      const owner = await setupOwnerProject();
+      const author = await addMember(owner.api);
+      const other = await addMember(owner.api);
+      const boardId = (await boards(author.api).post({ name: 'Ideas' })).data!.id;
+      await boards(author.api)({ boardId }).patch({ visibility: 'private' });
+
+      expect((await boards(other.api)({ boardId }).delete()).status).toBe(404);
+      expect((await boards(author.api)({ boardId }).get()).status).toBe(200);
+    });
+
+    it('answers a delete from outside the board the way an update is answered', async () => {
+      const owner = await setupOwnerProject();
+      const other = await addMember(owner.api);
+      const outsider = authedApi((await signUpTestUser()).cookie);
+      const boardId = (await boards(owner.api).post({ name: 'Ideas' })).data!.id;
+      await boards(owner.api)({ boardId }).patch({ visibility: 'private' });
+
+      expect((await boards(other.api)({ boardId }).patch({ name: 'Nope' })).status).toBe(404);
+      expect((await boards(other.api)({ boardId }).delete()).status).toBe(404);
+      expect((await boards(outsider)({ boardId }).patch({ name: 'Nope' })).status).toBe(403);
+      expect((await boards(outsider)({ boardId }).delete()).status).toBe(403);
+      expect((await boards(owner.api)({ boardId }).get()).status).toBe(200);
     });
   });
 
@@ -284,9 +374,7 @@ describe('note boards', () => {
 
     it('holds a role without the note_boards resource out of the section', async () => {
       const owner = await setupOwnerProject();
-      const role = await owner.api
-        .projects({ projectKey: 'MKT' })
-        .roles.post({ name: 'No notes', permissions: {} });
+      const role = await createRole(owner.api, 'MKT', { name: 'No notes', permissions: {} });
       const member = await addMember(owner.api, { roleId: role.data!.id });
       const boardId = (await boards(owner.api).post({ name: 'Ideas' })).data!.id;
 
@@ -299,9 +387,10 @@ describe('note boards', () => {
 
     it('lets a read-only role read boards but not change them', async () => {
       const owner = await setupOwnerProject();
-      const role = await owner.api
-        .projects({ projectKey: 'MKT' })
-        .roles.post({ name: 'Reader', permissions: { note_boards: { read: true } } });
+      const role = await createRole(owner.api, 'MKT', {
+        name: 'Reader',
+        permissions: { note_boards: { read: true } },
+      });
       const member = await addMember(owner.api, { roleId: role.data!.id });
       const boardId = (await boards(owner.api).post({ name: 'Ideas' })).data!.id;
 

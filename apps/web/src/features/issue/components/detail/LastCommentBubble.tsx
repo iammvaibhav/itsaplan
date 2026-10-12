@@ -1,11 +1,11 @@
 import { useEffect, useState, type RefObject } from 'react';
 import { X } from 'lucide-react';
-import { formatDistanceToNow, parseISO } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import Avatar from '@/components/common/Avatar';
-import { useDateFnsLocale } from '@/hooks/useDateFnsLocale';
+import { useRelativeTime } from '@/context/relativeTimeContext';
 import { cn } from '@/lib/utils';
 import { useLastComment } from '../../hooks/useLastComment';
+import type { ActivityFeedView } from '../../hooks/useActivityFeedView';
 import { commentPreview } from '../../utils/commentPreview';
 
 const SHOW_MS = 5000;
@@ -18,16 +18,18 @@ export default function LastCommentBubble({
   issueId,
   feedRef,
   imageByUserId,
+  view,
 }: {
   issueId: number;
   // The feed section to watch: the bubble stands in for it only while it is off screen.
   feedRef: RefObject<HTMLDivElement | null>;
   imageByUserId: Map<string, string | null>;
+  view: ActivityFeedView;
 }) {
   const t = useTranslations('issue.comments');
   const tCommon = useTranslations('common');
-  const locale = useDateFnsLocale();
-  const comment = useLastComment(issueId);
+  const relativeTime = useRelativeTime();
+  const comment = useLastComment(issueId, view);
   const preview = commentPreview(comment?.body ?? '');
   // One turn per mounted issue: it waits for the feed to leave the screen, runs its few
   // seconds, and is then done for good. Starting in 'waiting' keeps the bubble off an
@@ -98,7 +100,7 @@ export default function LastCommentBubble({
               <span className="flex items-baseline gap-2">
                 <span className="truncate text-sm font-medium">{author}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  · {formatDistanceToNow(parseISO(comment.createdAt), { addSuffix: true, locale })}
+                  · {relativeTime(comment.createdAt)}
                 </span>
               </span>
               <span dir="auto" className="line-clamp-2 text-sm text-foreground/85">

@@ -1,7 +1,8 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useAiAgentsQuery, useLoadedAgentThreads } from '@/services/aiAgents.service';
+import { useLoadedAgentThreads } from '@/services/aiAgents.service';
+import { useProjectAgents } from '@/hooks/useProjectAgents';
 import type { ChatSession } from './useChatSessions';
 
 // What a session is called in the tab row and in the menu of the tabs that did not fit
@@ -10,7 +11,7 @@ import type { ChatSession } from './useChatSessions';
 export function useChatSessionTitle(projectKey: string, session: ChatSession) {
   const t = useTranslations('aiChat');
   const threads = useLoadedAgentThreads(projectKey, session.agentId);
-  const agents = useAiAgentsQuery(projectKey).data ?? [];
+  const agents = useProjectAgents().data ?? [];
   const thread = threads.find((candidate) => candidate.id === session.threadId);
 
   return {

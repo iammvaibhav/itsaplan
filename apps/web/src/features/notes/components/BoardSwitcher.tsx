@@ -1,9 +1,9 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useState, type UIEvent } from 'react';
+import { useState } from 'react';
 import { Check, ChevronsUpDown, Layers, Loader2 } from 'lucide-react';
-import type { NoteBoardSummary, NoteBoardVisibility } from '@/lib/api';
+import type { NoteBoardSummary, NoteBoardVisibility } from '@/lib/api/endpoints/noteBoards';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -14,11 +14,8 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { useNoteBoardSearch, flattenBoardPages } from '../services/noteBoards.service';
+import { useNoteBoardSearch } from '../services/noteBoards.service';
 import { boardListIcon } from '../utils/visibility';
-
-// Load the next page when the list is scrolled near the bottom.
-const SCROLL_THRESHOLD = 48;
 
 // The list sections, in order.
 const GROUPS: NoteBoardVisibility[] = ['public', 'restricted', 'private'];
@@ -40,19 +37,9 @@ export default function BoardSwitcher({
   const t = useTranslations('notes');
   const [query, setQuery] = useState('');
   const debounced = useDebouncedValue(query, 250);
-  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useNoteBoardSearch(
-    projectKey,
-    debounced,
-  );
+  const { data, isLoading } = useNoteBoardSearch(projectKey, debounced);
 
-  const boards = flattenBoardPages(data?.pages);
-
-  function onScroll(e: UIEvent<HTMLDivElement>) {
-    const el = e.currentTarget;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD) {
-      if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-    }
-  }
+  const boards = data ?? [];
 
   function select(id: number) {
     onSelect(id);
@@ -92,7 +79,7 @@ export default function BoardSwitcher({
       <PopoverContent align="start" className="w-72 p-0">
         <Command shouldFilter={false}>
           <CommandInput placeholder={t('searchBoards')} value={query} onValueChange={setQuery} />
-          <CommandList onScroll={onScroll}>
+          <CommandList>
             {isLoading ? (
               <div className="flex items-center justify-center py-6 text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
@@ -109,11 +96,6 @@ export default function BoardSwitcher({
                     </CommandGroup>
                   );
                 })}
-                {isFetchingNextPage && (
-                  <div className="flex items-center justify-center py-2 text-muted-foreground">
-                    <Loader2 className="size-3.5 animate-spin" />
-                  </div>
-                )}
               </>
             )}
           </CommandList>

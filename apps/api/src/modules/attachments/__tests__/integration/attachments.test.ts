@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, afterEach, beforeEach } from 'bun:test';
 import { api, authedApi } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
+import { clearLimits, setLimits } from '#tests/helpers/limits';
 
 // Attachments feature: metadata in Postgres, bytes in the object store (shared/
-// s3.ts against a real MinIO — see the Tests setup for S3_* env). This is the
+// s3.ts against a real RustFS — see the Tests setup for S3_* env). This is the
 // only test that exercises s3.ts (putObject/getObject/deleteObject) and the one
 // public, unauthenticated route (GET /attachments/:publicId/raw), which is the
 // auth-context session-gate exception.
@@ -38,6 +39,19 @@ function uploadFile(
 describe('attachments', () => {
   beforeEach(async () => {
     await resetDb();
+  });
+  afterEach(clearLimits);
+
+  it("refuses an upload past the team's storage ceiling", async () => {
+    const { asOwner, issueId } = await setupIssue();
+    setLimits({ maxStorageBytes: 12 });
+
+    expect((await uploadFile(asOwner, issueId, 'a.txt', 'text/plain', 'hello')).status).toBe(201);
+    const past = await uploadFile(asOwner, issueId, 'b.txt', 'text/plain', 'hello world!');
+    expect(past.status).toBe(413);
+
+    // The ceiling counts the bytes already stored, not one file's size.
+    expect((await uploadFile(asOwner, issueId, 'c.txt', 'text/plain', 'fits')).status).toBe(201);
   });
 
   it('uploads bytes, serves them on the public raw route, and deletes them', async () => {
@@ -73,6 +87,50 @@ describe('attachments', () => {
     const empty = new File([], 'empty.txt', { type: 'text/plain' });
     const res = await asOwner.issues({ issueId }).attachments.post({ file: empty });
     expect(res.status).toBe(400);
+  });
+
+  it('serializes the shared project quota across issue, chat, and document uploads', async () => {
+    const { asOwner, issueId } = await setupIssue();
+    await asOwner.god['storage-settings'].put({ projectQuotaMb: 1 });
+    const initial = 'x'.repeat(256 * 1024);
+
+    expect((await uploadFile(asOwner, issueId, 'issue.txt', 'text/plain', initial)).status).toBe(
+      201,
+    );
+    expect(
+      (
+        await asOwner.projects({ projectKey: 'MKT' })['chat-attachments'].post({
+          filename: 'chat.txt',
+          contentType: 'text/plain',
+          contentBase64: Buffer.from(initial).toString('base64'),
+        })
+      ).status,
+    ).toBe(201);
+    const page = (
+      await asOwner.projects({ projectKey: 'MKT' }).documents.post({ title: 'Handbook' })
+    ).data!;
+    expect(
+      (
+        await asOwner
+          .projects({ projectKey: 'MKT' })
+          .documents({ documentId: page.id })
+          .assets.post({
+            file: new File([initial], 'document.txt', { type: 'text/plain' }),
+          })
+      ).status,
+    ).toBe(201);
+
+    const contender = 'y'.repeat(200 * 1024);
+    const results = await Promise.all([
+      uploadFile(asOwner, issueId, 'parallel-issue.txt', 'text/plain', contender),
+      asOwner
+        .projects({ projectKey: 'MKT' })
+        .documents({ documentId: page.id })
+        .assets.post({
+          file: new File([contender], 'parallel-document.txt', { type: 'text/plain' }),
+        }),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([201, 413]);
   });
 
   it('denies a non-member uploading to an issue', async () => {
@@ -124,6 +182,35 @@ describe('attachments', () => {
       // Still one attachment: the row was updated, not added to.
       const list = await asOwner.issues({ issueId }).attachments.get();
       expect(list.data).toHaveLength(1);
+    });
+
+    it('counts a replacement as the new bytes minus the current bytes under the quota lock', async () => {
+      const { asOwner, issueId } = await setupIssue();
+      await asOwner.god['storage-settings'].put({ projectQuotaMb: 1 });
+      const first = await uploadFile(
+        asOwner,
+        issueId,
+        'first.txt',
+        'text/plain',
+        'a'.repeat(700 * 1024),
+      );
+      expect(
+        (await uploadFile(asOwner, issueId, 'second.txt', 'text/plain', 'b'.repeat(250 * 1024)))
+          .status,
+      ).toBe(201);
+
+      const replaced = await asOwner.attachments({ publicId: first.data!.id }).put({
+        file: new File(['c'.repeat(750 * 1024)], 'first.txt', { type: 'text/plain' }),
+      });
+      expect(replaced.status).toBe(200);
+      expect(replaced.data?.sizeBytes).toBe(750 * 1024);
+
+      const rejected = await asOwner.attachments({ publicId: first.data!.id }).put({
+        file: new File(['d'.repeat(800 * 1024)], 'first.txt', { type: 'text/plain' }),
+      });
+      expect(rejected.status).toBe(413);
+      const raw = await api.attachments({ publicId: first.data!.id }).raw.get();
+      expect(String(raw.data)).toHaveLength(750 * 1024);
     });
 
     it('serves the replaced bytes to a client holding the old entity tag', async () => {
@@ -241,6 +328,13 @@ describe('attachments', () => {
         .attachments({ publicId: '00000000-0000-0000-0000-000000000000' })
         .raw.get();
       expect(res.status).toBe(404);
+    });
+
+    // The route is public, so a malformed id reaching Postgres would answer 500 with
+    // the driver's message to an anonymous caller.
+    it('returns 400 for a publicId that is not a uuid', async () => {
+      const res = await api.attachments({ publicId: 'not-a-uuid' }).raw.get();
+      expect(res.status).toBe(400);
     });
   });
 

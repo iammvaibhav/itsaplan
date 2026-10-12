@@ -1,5 +1,5 @@
 import { SquareKanban } from 'lucide-react';
-import type { Project } from '@/lib/api';
+import type { Project } from '@/lib/api/endpoints/projects';
 import { Pill } from '@/components/common/fields/Pill';
 import PopoverPick from '@/components/common/fields/PopoverPick';
 import { useTranslations } from 'next-intl';
@@ -16,7 +16,7 @@ export default function ProjectSelect({
   readOnly?: boolean;
 }) {
   const tNav = useTranslations('nav');
-  const project = projects.find((p) => p.key === value);
+  const project = projects.find((p) => p.ref === value);
 
   return (
     <PopoverPick
@@ -33,8 +33,9 @@ export default function ProjectSelect({
       inputPlaceholder={tNav('search')}
       emptyText={tNav('noProjects')}
       items={projects.map((p) => ({
-        key: p.key,
-        search: `${p.name} ${p.key}`,
+        // ref, not key: a project key is unique only within its team.
+        key: p.ref,
+        search: `${p.name} ${p.key} ${p.teamName}`,
         icon: <SquareKanban className="size-4" />,
         label: p.name,
         trailing: (
@@ -42,8 +43,8 @@ export default function ProjectSelect({
             {p.key}
           </span>
         ),
-        selected: p.key === value,
-        onSelect: () => onChange(p.key),
+        selected: p.ref === value,
+        onSelect: () => onChange(p.ref),
       }))}
     />
   );

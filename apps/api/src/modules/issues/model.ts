@@ -1,10 +1,73 @@
 import { t } from 'elysia';
 import { ActivityPayloadResponse } from '#shared/activity';
+import { DevelopmentLinkResponse } from '#modules/git/model';
 import { isoDate } from '#shared/schemas';
+
+// Ceiling of every markdown text written on an issue: the description, a comment
+// and a custom field value. Each of them is scanned for mentions.
+export const ISSUE_TEXT_LIMIT = 50_000;
 
 // t.Numeric validates a numeric path param and coerces the string to a number. A
 // non-numeric id gets a 400 before it reaches the service.
 export const issueParams = t.Object({ issueId: t.Numeric() });
+export const issueDevelopmentLinkParams = t.Object({
+  issueId: t.Numeric(),
+  linkId: t.Numeric(),
+});
+export const issueDevelopmentRepositoryParams = t.Object({
+  issueId: t.Numeric(),
+  repositoryId: t.Numeric(),
+});
+
+export const issueDevelopmentListQuery = t.Object({
+  page: t.Optional(t.Numeric({ minimum: 1 })),
+  state: t.Optional(t.Union([t.Literal('open'), t.Literal('all')])),
+});
+
+export const linkIssueDevelopmentBody = t.Object({
+  repositoryId: t.Integer({ minimum: 1 }),
+  number: t.Integer({ minimum: 1 }),
+});
+
+export const createIssuePullRequestBody = t.Object({
+  repositoryId: t.Integer({ minimum: 1 }),
+  sourceBranch: t.String({ minLength: 1, maxLength: 500 }),
+  targetBranch: t.String({ minLength: 1, maxLength: 500 }),
+  title: t.String({ minLength: 1, maxLength: 500 }),
+  description: t.String({ maxLength: 50_000 }),
+  draft: t.Boolean(),
+});
+
+export const DevelopmentRepositoryResponse = t.Object({
+  id: t.Number(),
+  provider: t.Union([t.Literal('github'), t.Literal('gitlab')]),
+  fullName: t.String(),
+  webUrl: t.String(),
+});
+
+export const LinkablePullRequestResponse = t.Object({
+  number: t.Number(),
+  title: t.String(),
+  url: t.Nullable(t.String()),
+  state: t.Union([t.Literal('open'), t.Literal('merged'), t.Literal('closed')]),
+  draft: t.Boolean(),
+  sourceBranch: t.Nullable(t.String()),
+  targetBranch: t.String(),
+  headSha: t.Nullable(t.String()),
+  updatedAt: t.String(),
+  linked: t.Boolean(),
+});
+
+export const LinkablePullRequestPageResponse = t.Object({
+  pullRequests: t.Array(LinkablePullRequestResponse),
+  nextPage: t.Nullable(t.Number()),
+});
+
+export const DevelopmentBranchPageResponse = t.Object({
+  branches: t.Array(t.String()),
+  defaultBranch: t.Nullable(t.String()),
+  nextPage: t.Nullable(t.Number()),
+});
 
 // --- Response DTO schemas (mirror the service interfaces the handlers return) -----
 
@@ -152,6 +215,11 @@ export const IssueWatcherResponse = t.Object({
   image: t.Nullable(t.String()),
 });
 
+export const issueWatcherParams = t.Object({
+  issueId: t.Numeric(),
+  userId: t.String(),
+});
+
 // ChecklistItemRow / ChecklistRow from checklists.ts.
 export const ChecklistItemResponse = t.Object({
   id: t.Number(),
@@ -227,6 +295,7 @@ export const IssueWithFieldsResponse = t.Composite([
     parent: t.Nullable(IssueRefResponse),
     subtasks: t.Array(IssueRefResponse),
     checklists: t.Array(ChecklistResponse),
+    development: t.Array(DevelopmentLinkResponse),
   }),
 ]);
 
@@ -274,6 +343,7 @@ export const FeedItemResponse = t.Object({
   action: t.Nullable(t.String()),
   payload: ActivityPayloadResponse,
   createdAt: t.String(),
+  editedAt: t.Nullable(t.String()),
 });
 
 export const FeedCursorResponse = t.Nullable(t.Object({ ts: t.String(), id: t.Number() }));
@@ -300,10 +370,30 @@ export const GroupedFeedPageResponse = t.Object({
   nextCursor: FeedCursorResponse,
 });
 
-// Both feed routes page the same way: a limit and the previous page's cursor.
+// Both feed routes page the same way: a limit and the previous page's cursor, over
+// the entries the filter keeps, in the order asked for.
 export const feedPageQuery = t.Object({
   limit: t.Optional(t.Numeric({ description: 'Max items per page (1-100). Default 25.' })),
   cursor: t.Optional(t.String({ description: 'nextCursor from the previous page, for paging.' })),
+  filter: t.Optional(
+    t.Union([t.Literal('comments'), t.Literal('history'), t.Literal('worklog')], {
+      description:
+        'Only comments, only the change log without time entries, or only time entries. Omit for every entry.',
+    }),
+  ),
+  order: t.Optional(
+    t.Union([t.Literal('desc'), t.Literal('asc')], {
+      description: "'desc' (default) serves the newest entries first, 'asc' the oldest.",
+    }),
+  ),
+});
+
+// FeedCounts from activity.ts: how many entries each feed filter keeps.
+export const FeedCountsResponse = t.Object({
+  all: t.Number(),
+  comments: t.Number(),
+  history: t.Number(),
+  worklog: t.Number(),
 });
 
 // TimelineSegment from status-history.ts: one stretch the issue spent in a column.
@@ -375,14 +465,19 @@ export const createIssueBody = t.Object({
     ),
   ),
   title: t.String({ minLength: 1, description: 'Issue title.' }),
-  description: t.Optional(t.String({ description: 'Issue description (plain text or markdown).' })),
+  description: t.Optional(
+    t.String({
+      maxLength: ISSUE_TEXT_LIMIT,
+      description: 'Issue description (plain text or markdown).',
+    }),
+  ),
   priority: t.Optional(
     t.Nullable(t.String({ description: 'One of: urgent, high, medium, low. Or null.' })),
   ),
   estimatePoints: t.Optional(EstimatePointsSchema),
   estimateMinutes: t.Optional(EstimateMinutesSchema),
-  startDate: t.Optional(t.Nullable(t.String({ description: "Start date 'YYYY-MM-DD', or null." }))),
-  dueDate: t.Optional(t.Nullable(t.String({ description: "Due date 'YYYY-MM-DD', or null." }))),
+  startDate: t.Optional(t.Nullable(isoDate("Start date 'YYYY-MM-DD', or null."))),
+  dueDate: t.Optional(t.Nullable(isoDate("Due date 'YYYY-MM-DD', or null."))),
   labelIds: t.Optional(
     t.Array(t.Integer(), { description: 'Label ids to attach. From get_project.labels.' }),
   ),
@@ -400,8 +495,8 @@ export const bulkUpdateIssuesBody = t.Object({
     priority: t.Optional(t.Nullable(t.String())),
     estimatePoints: t.Optional(EstimatePointsSchema),
     estimateMinutes: t.Optional(EstimateMinutesSchema),
-    startDate: t.Optional(t.Nullable(t.String())),
-    dueDate: t.Optional(t.Nullable(t.String())),
+    startDate: t.Optional(t.Nullable(isoDate("Start date 'YYYY-MM-DD', or null."))),
+    dueDate: t.Optional(t.Nullable(isoDate("Due date 'YYYY-MM-DD', or null."))),
   }),
 });
 
@@ -457,6 +552,19 @@ export const issueSequenceParams = t.Object({
   sequenceNumber: t.Numeric(),
 });
 
+export const moveIssueBody = t.Object({
+  projectId: t.Integer({
+    description:
+      'The project id to move the issue to, from list_projects. Must be in the same team.',
+  }),
+  columnId: t.Optional(
+    t.Integer({
+      description:
+        'The column (state) id in the target project, from get_project. Left out, the column of the same name or state type is used.',
+    }),
+  ),
+});
+
 export const updateIssueBody = t.Object({
   columnId: t.Optional(t.Integer({ description: 'Move the issue to this column (state) id.' })),
   position: t.Optional(t.Number({ description: 'Ordering position within the column.' })),
@@ -492,14 +600,16 @@ export const updateIssueBody = t.Object({
     t.Nullable(t.String({ description: 'New delegate user id (an AI agent), or null.' })),
   ),
   title: t.Optional(t.String({ minLength: 1, description: 'New title.' })),
-  description: t.Optional(t.String({ description: 'New description.' })),
+  description: t.Optional(
+    t.String({ maxLength: ISSUE_TEXT_LIMIT, description: 'New description.' }),
+  ),
   priority: t.Optional(
     t.Nullable(t.String({ description: 'One of: urgent, high, medium, low. Or null.' })),
   ),
   estimatePoints: t.Optional(EstimatePointsSchema),
   estimateMinutes: t.Optional(EstimateMinutesSchema),
-  startDate: t.Optional(t.Nullable(t.String({ description: "Start date 'YYYY-MM-DD', or null." }))),
-  dueDate: t.Optional(t.Nullable(t.String({ description: "Due date 'YYYY-MM-DD', or null." }))),
+  startDate: t.Optional(t.Nullable(isoDate("Start date 'YYYY-MM-DD', or null."))),
+  dueDate: t.Optional(t.Nullable(isoDate("Due date 'YYYY-MM-DD', or null."))),
   labelIds: t.Optional(
     t.Array(t.Integer(), { description: "Replace the issue's labels with these ids." }),
   ),
@@ -511,7 +621,9 @@ export const subtaskDispositionQuery = t.Object({
 });
 
 export const setIssueFieldValueBody = t.Object({
-  value: t.Optional(t.Nullable(t.Union([t.String(), t.Number(), t.Boolean()]))),
+  value: t.Optional(
+    t.Nullable(t.Union([t.String({ maxLength: ISSUE_TEXT_LIMIT }), t.Number(), t.Boolean()])),
+  ),
   valueEnd: t.Optional(t.Nullable(t.String())),
   optionIds: t.Optional(t.Array(t.Integer())),
 });
@@ -543,9 +655,23 @@ export const feedRangeQuery = t.Object({
   ),
 });
 
+const commentText = t.String({
+  minLength: 1,
+  maxLength: ISSUE_TEXT_LIMIT,
+  description: 'Comment text.',
+});
+
 export const createCommentBody = t.Object({
-  body: t.String({ minLength: 1, description: 'Comment text.' }),
+  body: commentText,
   replyToId: t.Optional(t.Number({ description: 'Reply to this comment of the same issue.' })),
+});
+
+export const updateCommentBody = t.Object({
+  body: commentText,
+});
+
+export const commentParams = t.Object({
+  commentId: t.Numeric({ description: 'The comment id.' }),
 });
 
 export const archiveIssueBody = t.Optional(
@@ -584,6 +710,7 @@ export const AllTicketResponse = t.Object({
   id: t.Number(),
   projectId: t.Number(),
   projectKey: t.String(),
+  projectRef: t.String(),
   projectName: t.String(),
   sequenceNumber: t.Number(),
   identifier: t.String(),

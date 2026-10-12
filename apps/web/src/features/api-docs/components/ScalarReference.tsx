@@ -3,7 +3,7 @@
 import { ApiReferenceReact } from '@scalar/api-reference-react';
 import '@scalar/api-reference-react/style.css';
 import './scalar-theme.css';
-import { API_URL } from '@/lib/api';
+import { API_URL } from '@/lib/api/core/client';
 
 // The API mounts /docs/json outside the session guard, so the browser fetches it
 // directly.
@@ -19,6 +19,10 @@ export default function ScalarReference({ dark }: { dark: boolean }) {
           url: SPEC_URL,
           forceDarkModeState: dark ? 'dark' : 'light',
           hideDarkModeToggle: true,
+          // Scalar's default fonts are loaded from fonts.scalar.com, which the
+          // Content-Security-Policy blocks. The theme maps --scalar-font to the app
+          // font anyway, so its own faces are not needed.
+          withDefaultFonts: false,
           agent: { disabled: true },
           // The app already exposes its own MCP server; hide Scalar's built-in
           // "Generate MCP" button.

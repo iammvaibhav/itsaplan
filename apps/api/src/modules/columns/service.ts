@@ -3,7 +3,11 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { HttpError } from '#shared/lib';
 import { getMembership } from '#modules/members/service';
 import { recordActivityForIssues, statusSide } from '#modules/issues/activity';
+import { getIssues } from '#modules/issues/service';
+import { emitIssueEvents, issuePayloads } from '#modules/issues/webhook-payload';
+import { emitWebhookEvents, projectEventWanted } from '#modules/webhooks/emit';
 import { recordStatusChange } from '#modules/issues/status-history';
+import { hasUnfinishedStatusRuns, queueStatusRuns } from '#modules/agents/schedules/issue-runs';
 
 export interface ColumnRow {
   id: number;
@@ -219,6 +223,12 @@ export async function deleteColumn(
   if (!column || column.projectId !== projectId)
     throw new HttpError(404, `Column ${columnId} not found`);
   if (column.stateType === 'backlog') throw new HttpError(400, 'Backlog columns cannot be deleted');
+  if (await hasUnfinishedStatusRuns(columnId)) {
+    throw new HttpError(
+      409,
+      'Agent schedules of this column have runs in progress. End them or wait for them to finish first',
+    );
+  }
 
   let target: ColumnRow | null = null;
   if (opts.mode === 'move') {
@@ -227,6 +237,13 @@ export async function deleteColumn(
       throw new HttpError(400, 'Target column must belong to the same project');
     if (target.id === column.id)
       throw new HttpError(400, 'Target column must differ from the deleted column');
+  }
+
+  // Built before the transaction: the payloads name the column, which it deletes.
+  let deletedPayloads: unknown[] = [];
+  if (opts.mode === 'delete' && (await projectEventWanted(projectId, 'issue.deleted'))) {
+    const rows = await db.select({ id: issue.id }).from(issue).where(eq(issue.columnId, columnId));
+    deletedPayloads = await issuePayloads(await getIssues(rows.map((r) => r.id)));
   }
 
   const movedIssueIds = await db.transaction(async (tx) => {
@@ -256,5 +273,11 @@ export async function deleteColumn(
       { action: 'status', from: statusSide(column), to: statusSide(target) },
       actorUserId,
     );
+    const moved = () => getIssues(movedIssueIds);
+    await emitIssueEvents(projectId, 'issue.updated', moved, actorUserId);
+    await emitIssueEvents(projectId, 'issue.state_changed', moved, actorUserId);
+    await queueStatusRuns(movedIssueIds, target.id, actorUserId);
+  } else {
+    await emitWebhookEvents(projectId, 'issue.deleted', async () => deletedPayloads, actorUserId);
   }
 }

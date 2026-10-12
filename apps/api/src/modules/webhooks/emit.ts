@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { db, webhook, webhookDelivery } from '@repo/db';
+import { aiAgent, db, user, webhook, webhookDelivery } from '@repo/db';
 import { and, eq, sql } from 'drizzle-orm';
+import type { ActivityActor } from '#modules/issues/activity';
 import type { WebhookEventType } from './service';
 
 // Maps our granular event type to the Linear-style envelope's action + resource
@@ -17,39 +18,67 @@ const EVENT_SHAPE: Record<WebhookEventType, { action: string; type: string }> = 
   'issue.label_changed': { action: 'update', type: 'Issue' },
   'issue.link_changed': { action: 'update', type: 'Issue' },
   'comment.created': { action: 'create', type: 'Comment' },
+  'comment.updated': { action: 'update', type: 'Comment' },
+  'comment.deleted': { action: 'remove', type: 'Comment' },
 };
 
-// Fan-out for outgoing webhooks. Queues one delivery per active webhook of the
-// project that subscribes to eventType. The deliveries share one eventId, which stays
-// the same across retries so a receiver can deduplicate. Call it right after a domain
-// mutation, next to the activity log, the same way the issue service handles its other
-// post-write side effects. It does nothing when no webhook matches, so a project with
-// no webhooks pays one indexed SELECT.
-//
-// The body follows Linear's webhook envelope: top-level action, type, data, plus
-// createdAt and webhookTimestamp (epoch ms). `event` is our extension, and it carries
-// the granular event type. We omit organizationId and url, because there is no
-// organization concept and issues have no public URL. The shared dedup id goes in the
-// X-Itsaplan-Event-Id header, not in the body.
-export async function emitWebhookEvent(
-  projectId: number,
-  eventType: WebhookEventType,
-  data: unknown,
-): Promise<void> {
-  await emitWebhookEvents(projectId, eventType, () => Promise.resolve([data]));
+// Who caused the event. An agent acts through its own bot user, so a user id is an
+// agent when an ai_agent row points at it. A system write has no user: it carries
+// the system's name ('GitHub', 'Auto-archive'), or null for an unnamed one.
+interface WebhookActor {
+  type: 'human' | 'agent' | 'system';
+  id: string | null;
+  name: string | null;
 }
 
-// Several events of one type at once. It builds the payloads only after it finds a
-// subscribed webhook. Use it for a write whose payload costs its own queries to
-// build: linking two issues has to load both of them. A project with no webhook then
-// pays one indexed SELECT and nothing else. Each event gets its own eventId. The
-// deliveries go in as one insert.
-export async function emitWebhookEvents(
+async function resolveActor(actor: ActivityActor): Promise<WebhookActor> {
+  if (!actor) return { type: 'system', id: null, name: null };
+  if (typeof actor === 'object') return { type: 'system', id: null, name: actor.system };
+  const [row] = await db
+    .select({ name: user.name, agentId: aiAgent.id })
+    .from(user)
+    .leftJoin(aiAgent, eq(aiAgent.userId, user.id))
+    .where(eq(user.id, actor))
+    .limit(1);
+  return { type: row?.agentId != null ? 'agent' : 'human', id: actor, name: row?.name ?? null };
+}
+
+export interface ProjectEvent {
+  projectId: number;
+  type: WebhookEventType;
+  actor: ActivityActor;
+  // The event's webhook payloads (`data`), one per issue or comment it covers. Built on
+  // the first call and shared with the webhooks.
+  load: () => Promise<unknown[]>;
+}
+
+type ProjectEventListener = (event: ProjectEvent) => Promise<void>;
+
+const listeners: ProjectEventListener[] = [];
+
+// Hands the events the webhooks get to an extension of the api, inside the request
+// that caused them. A listener that throws is logged and does not fail that request.
+// Returns the call that removes the listener.
+export function onProjectEvent(listener: ProjectEventListener): () => void {
+  listeners.push(listener);
+  return () => {
+    const at = listeners.indexOf(listener);
+    if (at >= 0) listeners.splice(at, 1);
+  };
+}
+
+// Whether a listener of onProjectEvent or a subscribed webhook takes eventType, for a
+// caller that has to build the payloads before its write removes what they name.
+export async function projectEventWanted(
   projectId: number,
   eventType: WebhookEventType,
-  load: () => Promise<unknown[]>,
-): Promise<void> {
-  const matching = await db
+): Promise<boolean> {
+  return listeners.length > 0 || (await subscribedWebhooks(projectId, eventType)).length > 0;
+}
+
+// The active webhooks of the project that subscribe to eventType.
+function subscribedWebhooks(projectId: number, eventType: WebhookEventType) {
+  return db
     .select({ id: webhook.id })
     .from(webhook)
     .where(
@@ -60,12 +89,45 @@ export async function emitWebhookEvents(
         sql`${webhook.events} @> ${JSON.stringify([eventType])}::jsonb`,
       ),
     );
+}
+
+// Fan-out for outgoing webhooks. Queues one delivery per active webhook of the
+// project that subscribes to eventType, for each payload `load` returns. Each event
+// gets its own eventId, shared by its deliveries and kept across retries so a
+// receiver can deduplicate; the deliveries go in as one insert. Call it right after a
+// domain mutation, next to the activity log. The payloads are built at most once, when a
+// listener of onProjectEvent or a subscribed webhook needs them, so a project with no
+// webhooks and no listener pays one indexed SELECT.
+//
+// The body follows Linear's webhook envelope: top-level action, type, actor, data,
+// plus createdAt and webhookTimestamp (epoch ms). `event` is our extension, and it
+// carries the granular event type. We omit organizationId, because there is no
+// organization concept. The shared dedup id goes in the X-Itsaplan-Event-Id header,
+// not in the body.
+export async function emitWebhookEvents(
+  projectId: number,
+  eventType: WebhookEventType,
+  load: () => Promise<unknown[]>,
+  actor: ActivityActor,
+): Promise<void> {
+  let loaded: Promise<unknown[]> | undefined;
+  const loadOnce = () => (loaded ??= load());
+  for (const listener of listeners) {
+    try {
+      await listener({ projectId, type: eventType, actor, load: loadOnce });
+    } catch (error) {
+      console.error('[webhooks] event listener failed:', error);
+    }
+  }
+
+  const matching = await subscribedWebhooks(projectId, eventType);
   if (matching.length === 0) return;
 
-  const payloads = await load();
+  const payloads = await loadOnce();
   if (payloads.length === 0) return;
 
   const { action, type } = EVENT_SHAPE[eventType];
+  const resolvedActor = await resolveActor(actor);
   const now = new Date();
   const createdAt = now.toISOString();
   const webhookTimestamp = now.getTime();
@@ -81,6 +143,7 @@ export async function emitWebhookEvents(
           action,
           type,
           event: eventType,
+          actor: resolvedActor,
           createdAt,
           data,
           webhookTimestamp,

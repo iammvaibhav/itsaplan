@@ -1,4 +1,5 @@
-import type { AllTicket, StateType } from '@/lib/api';
+import type { StateType } from '@/lib/api/endpoints/columns';
+import type { AllTicket } from '@/lib/api/endpoints/issues';
 
 // The display order of the global board's state groups: work flows left to
 // right from the backlog to whatever closed it.

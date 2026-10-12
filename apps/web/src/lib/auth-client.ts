@@ -1,9 +1,15 @@
 import { createAuthClient } from 'better-auth/react';
 import { inferAdditionalFields } from 'better-auth/client/plugins';
-import { magicLinkClient, usernameClient } from 'better-auth/client/plugins';
+import { genericOAuthClient, magicLinkClient, usernameClient } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
 import { apiKeyClient } from '@better-auth/api-key/client';
-import { API_URL, markSigningOut } from '@/lib/api';
+import { API_URL, markSigningOut } from '@/lib/api/core/client';
+
+// better-auth appends its default /api/auth only to a bare origin; an API_URL with a
+// path would be used as-is, so the mount is spelled out.
+export function authBaseURL(apiUrl: string): string {
+  return `${apiUrl.replace(/\/+$/, '')}/api/auth`;
+}
 
 // The better-auth handler lives on the backend (Elysia), so baseURL is the API origin.
 // inferAdditionalFields declares the custom `role` column added in @repo/auth so the
@@ -19,7 +25,7 @@ import { API_URL, markSigningOut } from '@/lib/api';
 // mount here is correct for a bare origin too, and matches how lib/api.ts already
 // builds its own sign-out URL.
 export const authClient = createAuthClient({
-  baseURL: `${API_URL}/api/auth`,
+  baseURL: authBaseURL(API_URL),
   plugins: [
     inferAdditionalFields({
       user: {
@@ -35,6 +41,9 @@ export const authClient = createAuthClient({
     // instance setting the sign-in screen reads from /auth-config; the server
     // refuses to send when it is off.
     magicLinkClient(),
+    // The instance's own OIDC provider: signIn.oauth2(). One provider, configured in
+    // god mode; whether it is offered comes from /auth-config.
+    genericOAuthClient(),
     // Usernames: signIn.username(). The sign-in screen sends its one field here when
     // what was typed is not an address, and the plugin types `username` on the
     // session user so the profile page can show it.

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'bun:test';
 import { authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
+import { createAgent } from '#tests/helpers/agents';
 
 // Issues live under a project. Create is /projects/:projectKey/issues (permission
 // guard on :projectKey); the other routes address the issue by its own id
@@ -120,6 +121,14 @@ describe('issues', () => {
       // `date` columns come back as 'YYYY-MM-DD', which Eden Treaty revives into a Date.
       expect(new Date(created.data!.startDate!).getTime()).toBe(new Date('2026-01-01').getTime());
       expect(new Date(created.data!.dueDate!).getTime()).toBe(new Date('2026-02-01').getTime());
+    });
+
+    it('accepts a description of 50000 characters and rejects a longer one', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const fits = await createIssue(asOwner, columnId, { description: 'x'.repeat(50_000) });
+      expect(fits.status).toBe(201);
+      const over = await createIssue(asOwner, columnId, { description: 'x'.repeat(50_001) });
+      expect(over.status).toBe(400);
     });
 
     it('hands out an increasing per-project sequence number', async () => {
@@ -269,6 +278,71 @@ describe('issues', () => {
     });
   });
 
+  describe('dates', () => {
+    // The value goes into a `date` column, so an unvalidated one reaches Postgres
+    // and answers 500 with the driver's message instead of 400.
+    it('rejects a due date that is not YYYY-MM-DD', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const res = await asOwner.projects({ projectKey: 'MKT' }).issues.post({
+        columnId,
+        title: 'Dated',
+        dueDate: '01.02.2026',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a due date an update sends in another notation', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const created = await asOwner
+        .projects({ projectKey: 'MKT' })
+        .issues.post({ columnId, title: 'Dated' });
+      const res = await asOwner
+        .issues({ issueId: created.data!.id })
+        .patch({ dueDate: '01.02.2026' });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a date whose month does not exist', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const res = await asOwner
+        .projects({ projectKey: 'MKT' })
+        .issues.post({ columnId, title: 'Dated', dueDate: '2026-13-45' });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a due date before the start date on create', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const res = await createIssue(asOwner, columnId, {
+        startDate: '2026-09-08',
+        dueDate: '2026-08-30',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('allows a due date equal to the start date', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const res = await createIssue(asOwner, columnId, {
+        startDate: '2026-09-08',
+        dueDate: '2026-09-08',
+      });
+      expect(res.status).toBe(201);
+    });
+
+    it('rejects a due date patched before the stored start date', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId, { startDate: '2026-09-08' })).data!;
+      const res = await asOwner.issues({ issueId: issue.id }).patch({ dueDate: '2026-08-30' });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a start date patched after the stored due date', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId, { dueDate: '2026-08-30' })).data!;
+      const res = await asOwner.issues({ issueId: issue.id }).patch({ startDate: '2026-09-08' });
+      expect(res.status).toBe(400);
+    });
+  });
+
   describe('update', () => {
     it('updates the title', async () => {
       const { asOwner, columnId } = await setupProject();
@@ -280,6 +354,14 @@ describe('issues', () => {
 
       const read = await asOwner.issues({ issueId: issue.id }).get();
       expect(read.data?.title).toBe('Renamed');
+    });
+
+    it('bounds the description the way a new issue is bounded', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const edit = asOwner.issues({ issueId: issue.id });
+      expect((await edit.patch({ description: 'x'.repeat(50_000) })).status).toBe(200);
+      expect((await edit.patch({ description: 'x'.repeat(50_001) })).status).toBe(400);
     });
 
     it('moves the issue to another column', async () => {
@@ -571,6 +653,19 @@ describe('issues', () => {
       expect((await fieldValue(asOwner, issue.id, field.id))?.value).toBe('hello');
     });
 
+    it('accepts a text value of 50000 characters and rejects a longer one', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const field = (
+        await asOwner
+          .projects({ projectKey: 'MKT' })
+          ['custom-fields'].post({ name: 'Steps', fieldType: 'markdown' })
+      ).data!;
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const value = asOwner.issues({ issueId: issue.id }).fields({ fieldId: field.id });
+      expect((await value.put({ value: 'x'.repeat(50_000) })).status).toBe(200);
+      expect((await value.put({ value: 'x'.repeat(50_001) })).status).toBe(400);
+    });
+
     // A member field holds a user id. Which users it offers is its scope: everyone
     // the project has, the people only, or the agents only.
     async function memberField(
@@ -585,9 +680,11 @@ describe('issues', () => {
     }
 
     async function createAgentUserId(client: Api) {
-      const res = await client
-        .projects({ projectKey: 'MKT' })
-        ['ai-agents'].post({ name: 'Bot', username: 'bot', kind: 'external' });
+      const res = await createAgent(client, 'MKT', {
+        name: 'Bot',
+        username: 'bot',
+        kind: 'external',
+      });
       return res.data!.agent.userId;
     }
 
@@ -1262,6 +1359,27 @@ describe('issues', () => {
 
       const list = await issuesOf(asOwner);
       expect(list.find((i) => i.id === issue.id)?.columnId).toBe(columnId);
+    });
+
+    it("does not reveal another project's full column through the WIP check", async () => {
+      const { asOwner, columnId } = await setupProject();
+      const foreign = await foreignProject(asOwner);
+      await asOwner
+        .projects({ projectKey: 'OPS' })
+        .issues.post({ columnId: foreign.columnId, title: 'Occupant' });
+      await asOwner
+        .projects({ projectKey: 'OPS' })
+        .columns({ columnId: foreign.columnId })
+        .patch({ name: 'Ops Secret Lane', wipLimit: 1, wipMode: 'hard' });
+      const issue = (await createIssue(asOwner, columnId)).data!;
+
+      // The column check runs before the WIP check, so a full foreign column is
+      // refused as a foreign column, not as a full one.
+      const res = await asOwner
+        .projects({ projectKey: 'MKT' })
+        .issues.bulk.patch({ ids: [issue.id], patch: { columnId: foreign.columnId } });
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.error?.value)).not.toContain('Ops Secret Lane');
     });
 
     it("rejects a bulk add of another project's label", async () => {

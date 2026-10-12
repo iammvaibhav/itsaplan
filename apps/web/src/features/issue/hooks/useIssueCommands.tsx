@@ -15,7 +15,9 @@ import {
   User,
   X,
 } from 'lucide-react';
-import type { ActionDef, IssuePatch, ProjectDetail } from '@/lib/api';
+import type { ActionDef } from '@/lib/api/endpoints/actions';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { IssuePatch } from '@/lib/api/endpoints/issues';
 import { actionIcon } from '@/utils/actionIcons';
 import { toDateStr } from '@/utils/dates';
 import { useActionsQuery } from '@/services/actions.service';
@@ -59,7 +61,7 @@ export function useIssueCommands(
   const shell = useShellOptional();
   const onOpenIssue = shell?.onOpenIssue;
   const { data: session } = useSession();
-  const projectKey = project?.project.key ?? null;
+  const projectKey = project?.project.ref ?? null;
   const issueQuery = useIssueQuery(issueId);
   const issue = issueQuery.data ?? null;
   const updateIssue = useUpdateIssue(projectKey);

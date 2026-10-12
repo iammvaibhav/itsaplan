@@ -9,14 +9,14 @@ import { useTranslations } from 'next-intl';
 import { useShell } from '@/context/shellContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useInitiativeCountsQuery, useInitiativesQuery } from '@/services/initiatives.service';
-import { INITIATIVE_SORTS, type InitiativeSort } from '@/lib/api';
-import { useStripSortSensors } from '@/lib/dnd';
+import { INITIATIVE_SORTS, type InitiativeSort } from '@/lib/api/endpoints/initiatives';
+import { useDndSensors } from '@/lib/dnd';
 import { initiativesTabPath, type InitiativesTab } from '@/utils/paths';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList } from '@/components/ui/tabs';
 import InitiativesList from './components/list/InitiativesList';
 import InitiativesPagination from './components/list/InitiativesPagination';
-import CreateInitiativeDialog from './components/list/CreateInitiativeDialog';
+import InitiativeDialog from '@/components/common/overlay/InitiativeDialog';
 import InitiativeTabTrigger from './components/list/InitiativeTabTrigger';
 import { useInitiativeTabOrder } from './hooks/useInitiativeTabOrder';
 import { INITIATIVE_TABS, tabCount } from './utils/tabs';
@@ -37,9 +37,9 @@ export default function InitiativesPage({ tab }: { tab: InitiativesTab }) {
   const searchParams = useSearchParams();
   const [creating, setCreating] = useState(false);
   const { order, reorder } = useInitiativeTabOrder();
-  const sensors = useStripSortSensors();
+  const sensors = useDndSensors();
 
-  const projectKey = project?.project.key ?? null;
+  const projectKey = project?.project.ref ?? null;
   const activeTab = INITIATIVE_TABS.find((item) => item.value === tab)!;
   const orderedTabs = order.map((value) => INITIATIVE_TABS.find((item) => item.value === value)!);
 
@@ -65,7 +65,7 @@ export default function InitiativesPage({ tab }: { tab: InitiativesTab }) {
   const items = query.data?.items ?? [];
   const total = query.data?.total ?? 0;
 
-  const tabPath = initiativesTabPath(project.project.key, tab);
+  const tabPath = initiativesTabPath(project.project.ref, tab);
 
   const pushQuery = (params: URLSearchParams) => {
     const search = params.toString();
@@ -75,7 +75,7 @@ export default function InitiativesPage({ tab }: { tab: InitiativesTab }) {
   // A tab is its own route and carries no query, so switching one drops the page and
   // the sorting of the tab left behind.
   const changeTab = (next: InitiativesTab) => {
-    router.push(initiativesTabPath(project.project.key, next));
+    router.push(initiativesTabPath(project.project.ref, next));
   };
 
   const changePage = (next: number) => {
@@ -154,7 +154,7 @@ export default function InitiativesPage({ tab }: { tab: InitiativesTab }) {
       <InitiativesPagination page={page} pageSize={PAGE_SIZE} total={total} onPage={changePage} />
 
       {creating && projectKey && (
-        <CreateInitiativeDialog projectKey={projectKey} onClose={() => setCreating(false)} />
+        <InitiativeDialog projectKey={projectKey} onClose={() => setCreating(false)} />
       )}
     </div>
   );

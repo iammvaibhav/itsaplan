@@ -1,12 +1,13 @@
 import { t } from 'elysia';
+import { pageQueryFields, pageResponse } from '#shared/pagination';
 
 export const credentialParams = t.Object({
-  projectKey: t.String(),
+  teamId: t.Numeric(),
   credentialId: t.Numeric(),
 });
 
 export const providerParams = t.Object({
-  projectKey: t.String(),
+  teamId: t.Numeric(),
   provider: t.String({ description: "LLM provider key from list_integrations, e.g. 'anthropic'." }),
 });
 
@@ -21,14 +22,16 @@ export const integrationOptionsQuery = t.Object({
 // A stored credential DTO — never carries the secret, only the redacted view.
 export const CredentialResponse = t.Object({
   id: t.Number(),
-  projectId: t.Number(),
+  teamId: t.Number(),
   integrationKey: t.String(),
   label: t.Nullable(t.String()),
   redacted: t.Record(t.String(), t.Any()),
   createdAt: t.String(),
 });
 
-export const CredentialListResponse = t.Array(CredentialResponse);
+export const CredentialPageResponse = pageResponse(CredentialResponse);
+
+export const credentialListQuery = t.Object(pageQueryFields);
 
 const ConfigFieldResponse = t.Object({
   key: t.String(),

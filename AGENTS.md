@@ -21,8 +21,10 @@ solutions.
 
 Write a minimum of comments. A comment explains why, the code explains what — cover a comment
 with your hand and read the code under it: if the fact is recoverable from the code alone, the
-comment does not belong there. A wrong comment is worse than no comment, so change a comment in
-the same edit as the code it describes, or delete it. Layout and styling are never commented:
+comment does not belong there. A comment longer than the code under it is too long. A wrong
+comment is worse than no comment, so change a comment in the same edit as the code it describes,
+or delete it. The comment density of the code around a change is not a pattern to follow: this
+rule wins over matching the neighbours. Layout and styling are never commented:
 no notes on positioning, sticky or overflow behaviour, spacing, or why a class is set. The full
 rules, and the pass that removes comments that no longer hold, are in the `tidy` skill.
 
@@ -67,21 +69,22 @@ thinking.
 ## Layout
 
 ```
-apps/api        Elysia (Bun) — mounts better-auth at /api/auth/*        :3000
+apps/api        Elysia (Bun) — better-auth at /api/auth/*, agent runs      :3000
 apps/web        Next.js App Router, SSR (not SPA) + shadcn + TanStack Q :3001
-apps/worker     webhook and notification delivery, agent runs, schedules
+apps/worker     webhook and notification delivery, agent schedules
 apps/bot        Telegram bot, long polling
-packages/db     @repo/db     — Drizzle client, schema, migrations
+packages/db     @repo/db     — Drizzle client, schema, migrations, permission matrix, shared config readers
 packages/auth   @repo/auth   — better-auth server instance + instance auth settings
 packages/crypto @repo/crypto — AES-256-GCM encryption for secrets at rest
 packages/mailer @repo/mailer — SMTP/Resend transport for outbound email
+packages/net    @repo/net    — SSRF guard for server-side fetches of a supplied URL
 packages/agent-tools @repo/agent-tools — tool definitions for the AI agent runtime
 packages/runner @itsaplan/runner — CLI that runs an external agent's queued tasks on the operator's own machine
 packages/eslint-config @repo/eslint-config — shared ESLint config
 ```
 
-Dependency graph: `api → @repo/auth → @repo/db`. **The web app never imports packages
-directly** — it talks to the API over HTTP (better-auth client + fetch).
+Dependency graph: `api → @repo/auth → @repo/db → @repo/crypto`. **The web app never
+imports packages directly** — it talks to the API over HTTP (better-auth client + fetch).
 
 ## Commands (from root)
 
@@ -96,18 +99,52 @@ directly** — it talks to the API over HTTP (better-auth client + fetch).
 | `bun run db:generate`     | generate SQL migrations from Drizzle schema                      |
 | `bun run db:migrate`      | apply migrations                                                 |
 | `bun run db:migrate:test` | apply migrations to the test DB (`.env.test`)                    |
+| `bun run setup`           | interactive setup: try it, develop, or generate env               |
 | `bun run auth:generate`   | regenerate better-auth tables → `packages/db/src/schema/auth.ts` |
 
 ## First run
 
 ```bash
 bun install
-cp .env.example .env && cp apps/web/.env.example apps/web/.env
-# set BETTER_AUTH_SECRET in .env:  openssl rand -base64 32
-docker compose -f docker-compose.dev.yml up -d   # dev Postgres + MinIO
-bun run db:migrate                               # apply migrations
-bun run dev                                       # api :3000 + web :3001
+bun run setup   # pick "Develop" — see the table below
+bun run dev     # api :3000 + web :3001
 ```
+
+`bun run setup` (`scripts/setup.ts`, `@clack/prompts`) asks what to set up and does the rest:
+
+| Answer | What it does |
+| ------- | ---------------------------------------------------------------------------------------- |
+| Try it | generates the secrets, `docker compose up -d`, opens the localhost URL in the browser |
+| Develop | `.env`, `apps/web/.env`, `.env.test`, dev compose, the `*_test` database, both migrations |
+| Generate env | builds `.env` and `apps/web/.env` from the examples, walks every value, then writes both or prints them instead; starts nothing |
+
+Self-hosting behind a domain is a manual `.env` and `docker compose up -d`, documented in
+`docs/self-hosting.md` — the script only covers the local cases.
+
+Running it again on a live instance does not damage it, and the rules that make that true
+are the part to preserve when changing the script:
+
+- Try it and Develop restart what is already up rather than setting up beside it, and each
+  offers to stop the other: they read the same `.env`, so they publish the same api and web
+  ports. Develop also offers to stop the PR stack, whose RustFS ports are fixed in its own
+  compose file. A refusal ends the run and changes nothing.
+- A busy port is offered for change, never forced. The check connects rather than binds, to
+  `127.0.0.1` and `::1`: on macOS a bind on one loopback address succeeds beside a listener
+  on the other, so a native Postgres and a container published on the wildcard both read as
+  free.
+- Postgres reads `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB` once, when it
+  initialises its volume, and the secrets are what the instance stored its data under. So a
+  value is only generated while that volume does not exist, and one that already holds a
+  real value is kept in every case. Generate env, which always produces a fresh set, asks a
+  second time before it overwrites an existing `.env`.
+- Both check that the running database accepts the credentials `.env` holds before starting
+  the api, which would otherwise fail its healthcheck on the mismatch; a refusal is named,
+  and `down -v` offered behind a confirmation that says the data goes with it. Develop also
+  checks from the host that something answers on the Postgres port `.env` names — a
+  container keeps the port it started with, so one that was not recreated publishes the old
+  one and the migrations reach nothing.
+- The setup migrates through `packages/db/src/migrate.ts`, not `bun run db:migrate`:
+  drizzle-kit exits 1 without printing what the database refused.
 
 ## Environment
 
@@ -118,8 +155,8 @@ bun run dev                                       # api :3000 + web :3001
   its process at **startup**, never through `NEXT_PUBLIC_*`, which `next build` would inline
   into the bundle and pin the image to one instance.
 - Local dev DB: `docker compose -f docker-compose.dev.yml up -d` (the deploy composes do
-  NOT publish the DB port). **Host 5432 is often taken** → use `POSTGRES_PORT=5433` and set
-  `DATABASE_URL=...localhost:5433...` in `.env`.
+  NOT publish the DB port). Host 5432 is often taken; `bun run setup` finds a free port and
+  writes both `POSTGRES_PORT` and `DATABASE_URL`.
 - A new environment variable belongs in `.env.example` and, if a service needs it, in the
   compose files.
 
@@ -127,15 +164,22 @@ bun run dev                                       # api :3000 + web :3001
 
 | File                         | Purpose                                                                                                                                           |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docker-compose.dev.yml`     | local backing services only: Postgres + MinIO. The apps run on the host.                                                                          |
+| `docker-compose.dev.yml`     | local backing services only: Postgres + RustFS. The apps run on the host.                                                                         |
 | `docker-compose.yml`         | self-hosting stack. Runs the published images (`docker compose pull && up -d`) or builds them from source (`up -d --build`); reads a plain `.env`, requires the secrets via `${VAR:?}`. |
 | `docker-compose.coolify.yml` | the same stack for Coolify: reads its generated `SERVICE_*` variables and builds from source. No `image:` here — with both fields Coolify still builds, and stops creating rollback images. |
 | `docker-compose.coolify-images.yml` | the same stack as a Coolify service (New Resource → Docker Compose Empty): the published images, no `build:`, no `ports:`, and the two domains declared with `SERVICE_URL_API_3000` / `SERVICE_URL_WEB_3001`. |
 | `docker-compose.test.yml`    | test gate against a throwaway Postgres.                                                                                                           |
 
 A change to the deploy stack usually has to land in **all three** of `docker-compose.yml`,
-`docker-compose.coolify.yml`, and `docker-compose.coolify-images.yml`. The **api applies migrations on startup** (`migrate.ts` in
-its Dockerfile CMD). `bot` runs Telegram long polling and must stay at one replica.
+`docker-compose.coolify.yml`, and `docker-compose.coolify-images.yml`. Migrations run as a
+separate step before the apps start: the one-shot `migrate` service in the compose files,
+which api, worker and bot wait for, and the `migrate` init container of the api pods in
+the Helm chart, where worker and bot pods wait in a `wait-for-migrations` init container. Both run `migrate.ts` from the api image and override the api command to
+start only the server. The api image's own CMD still migrates first, for deploy targets
+with no separate step (Railway, a plain `docker run`). `migrate.ts` dumps the database
+into the `db-backups` volume first — a failed dump stops the run, so nothing is migrated
+without a way back. Every run takes a Postgres advisory lock: runs that start together
+apply the migrations once, and the rest wait and then find nothing pending. `bot` runs Telegram long polling and must stay at one replica.
 
 ## Test gate (Docker)
 
@@ -150,12 +194,12 @@ docker compose -f docker-compose.test.yml build
 docker compose -f docker-compose.test.yml run --rm api-test
 ```
 
-`run` starts api-test's dependencies (Postgres healthy, the MinIO bucket init
+`run` starts api-test's dependencies (Postgres healthy, the RustFS bucket init
 completed), runs the suite, and exits with its code. It does not use
 `--abort-on-container-exit`, which tears the stack down the moment the one-shot
-`minio-test-init` exits, before api-test starts.
+`rustfs-test-init` exits, before api-test starts.
 
-The test database is created by the `postgres-test` service (`POSTGRES_DB=vela_test`,
+The test database is created by the `postgres-test` service (`POSTGRES_DB=itsaplan_test`,
 tmpfs — nothing persists). The `test` job in `.github/workflows/ci.yml` runs these
 same commands.
 
@@ -260,7 +304,9 @@ tidy moves the code. This is separate from the CI gate (`format:check` + `lint` 
 - Tests run on `bun test`. `apps/api` uses Eden Treaty; its setup and the rules for
   writing tests are in `apps/api/AGENTS.md`. They are integration tests against a real
   test Postgres (`.env.test`), not mocks. `packages/runner` has plain unit tests that
-  need nothing running.
+  need nothing running. `apps/api`, `apps/bot` and `apps/worker` share one test database and
+  the api suite truncates every table before each test, so `bun run test` passes
+  `--concurrency=1` to turbo: the suites run one package at a time.
 - `bun --filter` needs the `=` form: `bun --filter='@repo/db' run <script>`. The space form
   `bun --filter <name> run <script>` matches no packages in Bun 1.3.9.
 

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'bun:test';
 import { authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { addProjectMember } from '#tests/helpers/members';
+import { createAgent, teamOf } from '#tests/helpers/agents';
 import { resetDb } from '#tests/helpers/db';
 
 // A column's auto-assignee: the member every issue entering it is assigned to,
@@ -101,6 +102,31 @@ describe('column auto-assignee', () => {
         .members({ userId: memberId })
         .delete();
       expect(removed.status).toBe(204);
+
+      expect(await columnByName(asOwner, 'In Progress')).toMatchObject({
+        autoAssignUserId: null,
+      });
+    });
+
+    // An agent leaves a project through the agent's project list, not through the
+    // project's member list, so that path has to clear the column too.
+    it('is cleared when an agent is detached from the project', async () => {
+      const { asOwner } = await setupProject();
+      const teamId = await teamOf(asOwner, 'MKT');
+      const created = await createAgent(asOwner, 'MKT', {
+        name: 'Triage Bot',
+        username: 'triage',
+        kind: 'internal',
+      });
+      const agent = created.data!.agent;
+      const column = await columnByName(asOwner, 'In Progress');
+      await setAutoAssignee(asOwner, column.id, agent.userId);
+
+      const detached = await asOwner
+        .teams({ teamId })
+        ['ai-agents']({ agentId: agent.id })
+        .projects.put({ projectIds: [] });
+      expect(detached.status).toBe(200);
 
       expect(await columnByName(asOwner, 'In Progress')).toMatchObject({
         autoAssignUserId: null,

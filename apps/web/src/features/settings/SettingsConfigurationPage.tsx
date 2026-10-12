@@ -2,7 +2,7 @@
 
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
-import type { ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import { useShell } from '@/context/shellContext';
 import { settingsSection } from '@/utils/settingsSections';
 import { useSettingsSectionText } from '@/hooks/useSectionLabels';
@@ -21,7 +21,7 @@ import { useSubtaskAutomationForm } from './hooks/useSubtaskAutomationForm';
 
 const section = settingsSection('configuration');
 
-// The Configuration settings page (/project/:projectKey/settings/configuration).
+// The Configuration settings page (/:team/:projectKey/settings/configuration).
 // Holds the subtask automations, the estimate kinds and the auto-archive
 // thresholds; the Save in the page header writes all of them.
 export default function SettingsConfigurationPage() {
@@ -36,9 +36,9 @@ function ConfigurationPage({ project }: { project: ProjectDetail }) {
   const sectionText = useSettingsSectionText()(section.slug);
   const { can } = usePermissions();
   const features = useProjectFeatures();
-  const subtasks = useSubtaskAutomationForm(project.project.key);
+  const subtasks = useSubtaskAutomationForm(project.project.ref);
   const estimates = useEstimatesForm(project.project);
-  const archive = useAutoArchiveForm(project.project.key);
+  const archive = useAutoArchiveForm(project.project.ref);
   const saving = subtasks.saving || estimates.saving || archive.saving;
   const loaded = subtasks.loaded && archive.loaded;
 
@@ -53,8 +53,6 @@ function ConfigurationPage({ project }: { project: ProjectDetail }) {
     <SectionPageView
       title={sectionText.label}
       description={sectionText.description}
-      wide
-      widthClassName="min-w-[600px] max-w-[60%]"
       actions={
         can(section.resource, 'edit') ? (
           <Button size="sm" onClick={() => void save()} disabled={saving || !loaded}>

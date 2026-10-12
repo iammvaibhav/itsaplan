@@ -20,7 +20,7 @@ export default function FullPageView({
   label: string;
   title: string;
   description: ReactNode;
-  // Rendered on the right of the header row, aligned with the title.
+  // Rendered on the right of the header row.
   actions?: ReactNode;
   // A section rail placed left of the content column on wide viewports; the page
   // widens to make room for it.

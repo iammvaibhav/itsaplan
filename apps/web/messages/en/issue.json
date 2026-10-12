@@ -5,6 +5,9 @@
   "openAsPage": "Open as page",
   "titlePlaceholder": "Issue title",
   "noActivity": "No activity yet.",
+  "noComments": "No comments yet.",
+  "noHistory": "No changes yet.",
+  "noWorklog": "No time logged yet.",
   "noActivityInStretch": "No activity in this stretch.",
   "activityLoadFailed": "Could not load the activity.",
   "fields": {
@@ -47,6 +50,12 @@
     "dueDate": "Due date",
     "clearDueDate": "Clear due date",
     "labels": "Labels",
+    "copyId": "Copy ID",
+    "copyShortLink": "Copy short link",
+    "copyFullUrl": "Copy full URL",
+    "copyTitle": "Copy title",
+    "copyDescription": "Copy description",
+    "copyBranch": "Copy branch name",
     "copyPrompt": "Copy Prompt",
     "restore": "Restore",
     "archive": "Archive",
@@ -54,6 +63,7 @@
     "noDelegate": "No delegate",
     "noInitiative": "No initiative",
     "noCycle": "No cycle",
+    "copyFailed": "Could not copy to clipboard",
     "promptCopied": "Prompt copied to clipboard"
   },
   "commands": {
@@ -88,7 +98,9 @@
   },
   "actionsBar": {
     "shortLinkCopied": "Short link copied",
+    "branchCopied": "Branch name copied",
     "copyShortLink": "Copy short link",
+    "copyBranch": "Copy branch name",
     "copied": "Copied!",
     "copyPrompt": "Copy Prompt",
     "sharedPublicly": "Shared publicly",
@@ -96,7 +108,8 @@
     "restore": "Restore issue",
     "archive": "Archive issue",
     "delete": "Delete issue",
-    "shareIssue": "Share issue"
+    "shareIssue": "Share issue",
+    "move": "Move to another project"
   },
   "actions": {
     "deleteTitle": "Delete issue",
@@ -105,7 +118,16 @@
     "cannotBeUndone": "This cannot be undone.",
     "deleteDescription": "Delete {issue}? This removes the issue, its comments, activity and attachments.",
     "archiveDescription": "Archive {issue}? It leaves the board and can be restored later.",
-    "applyDescription": "Apply <v>{action}</v> to this issue?"
+    "applyDescription": "Apply <v>{action}</v> to this issue?",
+    "moveTitle": "Move issue",
+    "move": "Move",
+    "moveDescription": "Move {issue} to another project of this team. It gets a new number there, and the old link opens it.",
+    "moveSubtasks": "{count, plural, one {Its subtask moves with it.} other {Its # subtasks move with it.}}",
+    "moveProject": "Project",
+    "moveChooseProject": "Choose a project",
+    "moveColumn": "Status",
+    "moveColumnMatching": "Matching status",
+    "moveCarriedOver": "Type, labels and custom fields are kept where the target project has one of the same name. Cycle, initiative and links to issues in this project are removed."
   },
   "create": {
     "title": "New issue",
@@ -114,7 +136,10 @@
     "noFields": "No fields.",
     "description": "Description",
     "other": "Other",
-    "submit": "Create issue"
+    "submit": "Create issue",
+    "template": "Template",
+    "applyTemplate": "Apply template…",
+    "noTemplates": "No templates."
   },
   "attachments": {
     "title": "Attachments",
@@ -135,6 +160,8 @@
     "download": "Download",
     "downloadFile": "Download {name}",
     "deleteFile": "Delete {name}",
+    "deleteTitle": "Delete attachment",
+    "deleteConfirmation": "Delete {name}? It is also removed from the description wherever it is embedded. This cannot be undone.",
     "preview": "Preview {name}",
     "remove": "Remove {name}",
     "removeShort": "Remove",
@@ -191,7 +218,11 @@
     "detachFromParent": "Detach from {parent}",
     "subtaskOf": "Subtask of {issue}",
     "existingIssue": "Existing issue",
-    "searchPrompt": "Search issues to add as a subtask…"
+    "searchPrompt": "Search issues to add as a subtask…",
+    "filter": "Filter by state",
+    "hiding": "Hiding {states}",
+    "clearFilter": "Clear filter",
+    "allHidden": "All subtasks are hidden by the filter."
   },
   "subtaskDisposal": {
     "intro": "{issues, plural, one {This issue has} other {These issues have}} {count, plural, one {# subtask} other {# subtasks}}.",
@@ -215,7 +246,12 @@
     "cancel": "Cancel",
     "toSend": "to send",
     "unknownAuthor": "Unknown",
-    "goToLastComment": "Go to the last comment"
+    "goToLastComment": "Go to the last comment",
+    "edit": "Edit",
+    "edited": "edited",
+    "deleteComment": "Delete comment",
+    "deleteCommentTitle": "Delete this comment?",
+    "deleteCommentConfirmation": "The comment and its replies will be permanently deleted."
   },
   "stats": {
     "title": "Stats",
@@ -234,11 +270,7 @@
     "endTime": "End time"
   },
   "editor": {
-    "insertImage": "Insert image",
-    "insertNamed": "Insert {name}",
-    "descriptionPlaceholder": "Add description…",
-    "noImages": "No images attached yet. Upload one from the Attachments panel, or drop it straight onto the editor.",
-    "image": "Image"
+    "descriptionPlaceholder": "Add description…"
   },
   "cycleSelect": {
     "label": "Cycle",
@@ -317,17 +349,96 @@
     "pullRequestOpened": "opened pull request <v>{pr}</v>",
     "worklogAdded": "logged <v>{time}</v> on <v>{date}</v>",
     "worklogChanged": "changed the logged <v>{from}</v> on <v>{fromDate}</v> to <v>{to}</v> on <v>{date}</v>",
-    "worklogRemoved": "removed the <v>{time}</v> logged on <v>{date}</v>"
+    "worklogRemoved": "removed the <v>{time}</v> logged on <v>{date}</v>",
+    "commentEdited": "edited a comment",
+    "commentDeleted": "deleted a comment",
+    "issueMoved": "moved this issue from <v>{from}</v> to <v>{to}</v>"
+  },
+  "development": {
+    "title": "Development",
+    "unlink": "Unlink development item",
+    "branch": "Branch",
+    "add": "Add",
+    "empty": "Link an existing pull request or create one from a branch",
+    "linkExisting": "Link existing",
+    "linkExistingDescription": "Choose a pull request or merge request from a connected repository.",
+    "createPullRequest": "Create pull request",
+    "createPullRequestDescription": "Open a pull request from an existing branch and link it to this issue.",
+    "noConnectedRepositories": "Connect a GitHub or GitLab repository in project settings first.",
+    "loadingRepositories": "Loading repositories…",
+    "chooseRepository": "Choose repository",
+    "openOnly": "Open",
+    "allPullRequests": "All",
+    "searchPullRequests": "Search by title, branch, or number…",
+    "loadingPullRequests": "Loading pull requests…",
+    "noPullRequests": "No pull requests found.",
+    "alreadyLinked": "Linked",
+    "loadMore": "Load more",
+    "cancel": "Cancel",
+    "linking": "Linking…",
+    "linkPullRequest": "Link pull request",
+    "linkedSuccess": "Pull request linked",
+    "linkFailed": "Could not link this pull request",
+    "repository": "Repository",
+    "sourceBranch": "Source branch",
+    "targetBranch": "Target branch",
+    "chooseBranch": "Choose branch",
+    "loadingBranches": "Loading branches…",
+    "loadMoreBranches": "Load more branches",
+    "pullRequestTitle": "Title",
+    "description": "Description",
+    "descriptionPlaceholder": "Add context for reviewers…",
+    "mergeBehavior": "Issue link",
+    "closeOnMerge": "Close when merged",
+    "referenceOnly": "Reference only",
+    "createAsDraft": "Create as draft",
+    "branchesMustDiffer": "Source and target branches must be different.",
+    "creating": "Creating…",
+    "createdSuccess": "Pull request created and linked",
+    "createFailed": "Could not create this pull request",
+    "draft": "Draft",
+    "ready": "Ready",
+    "open": "Open",
+    "merged": "Merged",
+    "closed": "Closed",
+    "updated": "Updated {date}",
+    "openPipeline": "Open pipeline",
+    "checks": "{count, plural, one {# check} other {# checks}}",
+    "pipeline": {
+      "pending": "Pending",
+      "running": "Running",
+      "success": "Passed",
+      "failed": "Failed",
+      "canceled": "Canceled",
+      "skipped": "Skipped"
+    }
+  },
+  "documents": {
+    "title": "Docs",
+    "add": "Link a Docs page",
+    "empty": "No linked Docs yet.",
+    "loadFailed": "Could not load linked Docs. Click to retry.",
+    "remove": "Unlink {title}",
+    "untitled": "Untitled"
   },
   "archived": "Archived",
   "activityHeading": "Activity",
-  "feedFlat": "Flat",
-  "feedGrouped": "Grouped",
+  "feedTabAll": "All",
+  "feedTabComments": "Comments",
+  "feedTabHistory": "History",
+  "feedTabWorklog": "Work log",
+  "feedStatus": "Status",
+  "feedGroupByStatus": "Group by status",
+  "feedNewest": "Newest",
+  "feedOldest": "Oldest",
+  "feedChangeOrder": "Change order",
+  "feedRunToggle": "Show similar changes",
   "shareUnavailable": "This shared issue is not available. The link may have been revoked.",
   "fieldSelects": {
     "changeState": "Change state…",
     "changeType": "Change type…",
     "noType": "No type",
+    "unsetState": "No state",
     "noAssignee": "No assignee",
     "assignTo": "Assign to…",
     "you": "You",
@@ -350,7 +461,14 @@
   },
   "watchers": {
     "watch": "Watch",
-    "unwatch": "Unwatch"
+    "unwatch": "Unwatch",
+    "manage": "Manage watchers",
+    "search": "Search project members…",
+    "empty": "No members found.",
+    "you": "{name} (you)",
+    "add": "Add {name} as a watcher",
+    "remove": "Remove {name} from watchers",
+    "watchingCount": "{count, plural, =0 {No watchers} one {# watcher} other {# watchers}}"
   },
   "effects": {
     "cleared": "Cleared",

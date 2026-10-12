@@ -1,5 +1,5 @@
 import { useTranslations } from 'next-intl';
-import type { ProjectFeatures } from '@/lib/api';
+import type { ProjectFeatures } from '@/lib/api/endpoints/settings';
 import { useFeatureLabel } from '@/hooks/useFeatureLabel';
 import SettingsCard from '@/components/common/page/SettingsCard';
 import SettingsSection from '@/components/common/page/SettingsSection';
@@ -13,6 +13,7 @@ const FEATURES = [
   'dashboards',
   'initiatives',
   'cycles',
+  'documents',
   'notes',
   'subtasks',
   'checklists',
@@ -28,7 +29,7 @@ export default function SettingsFeatures({ form }: { form: FeatureTogglesForm })
   return (
     <SettingsSection title={t('features')} description={t('featuresHint')}>
       <SettingsCard className="divide-y divide-border/60">
-        {FEATURES.map((feature) => (
+        {FEATURES.filter((feature) => form.available.includes(feature)).map((feature) => (
           <SettingsRow
             key={feature}
             title={featureLabel(feature)}

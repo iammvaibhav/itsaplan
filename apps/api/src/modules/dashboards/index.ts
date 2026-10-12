@@ -32,6 +32,7 @@ export const dashboardRoutes = new Elysia({ name: 'dashboards', detail: { tags: 
       'dashboards',
       'Dashboard not found',
       async (p) => (await getDashboard(Number(p.dashboardId)))?.projectId ?? null,
+      'dashboards',
     ),
   })
   .get(
@@ -41,6 +42,7 @@ export const dashboardRoutes = new Elysia({ name: 'dashboards', detail: { tags: 
     },
     {
       permission: ['dashboards', 'read'],
+      feature: 'dashboards',
       response: { 200: DashboardListResponse, ...accessErrors },
       detail: { summary: "List a project's dashboards", ...mcpTool('list_dashboards') },
     },
@@ -55,6 +57,7 @@ export const dashboardRoutes = new Elysia({ name: 'dashboards', detail: { tags: 
     {
       body: createDashboardBody,
       permission: ['dashboards', 'create'],
+      feature: 'dashboards',
       response: { 201: DashboardResponse, ...commonErrors },
       detail: { summary: 'Create a dashboard', ...mcpTool('create_dashboard') },
     },
@@ -68,6 +71,7 @@ export const dashboardRoutes = new Elysia({ name: 'dashboards', detail: { tags: 
     {
       body: reorderDashboardsBody,
       permission: ['dashboards', 'edit'],
+      feature: 'dashboards',
       response: { 200: DashboardListResponse, ...commonErrors },
       detail: { summary: 'Reorder dashboards', ...mcpTool('reorder_dashboards') },
     },

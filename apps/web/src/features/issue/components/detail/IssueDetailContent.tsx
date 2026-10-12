@@ -1,23 +1,26 @@
 import { type CSSProperties, useRef, useState } from 'react';
 import { Direction } from 'radix-ui';
-import { type ProjectDetail, type IssueDetail as IssueDetailRow } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { IssueDetail as IssueDetailRow } from '@/lib/api/endpoints/issues';
 import { usePermissions } from '@/hooks/usePermissions';
 import { usePersistedWidth } from '@/hooks/usePersistedWidth';
 import { useProjectFeatures } from '@/hooks/useProjectFeatures';
 import ResizeGrip from '@/components/common/ResizeGrip';
 import { useIssueDetail } from '../../hooks/useIssueDetail';
-import { usePersistedOpen, usePersistedOpenGroups } from '../../hooks/usePersistedOpen';
+import { usePersistedOpen, usePersistedOpenGroups } from '@/hooks/usePersistedOpen';
 import { useFilePaste } from '../../hooks/useFilePaste';
 import IssueAttachmentsPanel from './IssueAttachmentsPanel';
 import IssueChecklistsPanel from './IssueChecklistsPanel';
 import IssueLinksPanel from './IssueLinksPanel';
+import IssueDevelopmentPanel from './IssueDevelopmentPanel';
+import IssueDocumentsPanel from './IssueDocumentsPanel';
 import IssueWorklogPanel from './IssueWorklogPanel';
 import IssueSubtasksPanel from './IssueSubtasksPanel';
 import IssueActivityFeed from './IssueActivityFeed';
 import LastCommentBubble from './LastCommentBubble';
 import IssueDetailSkeleton from './IssueDetailSkeleton';
 import IssueStatusTimeline from './IssueStatusTimeline';
-import IssueMarkdownEditor from '../editor/IssueMarkdownEditor';
+import MarkdownEditor from '@/components/common/editor/MarkdownEditor';
 import IssueCustomFieldBody from '../fields/IssueCustomFieldBody';
 import IssueProperties from './IssueProperties';
 import IssueActionsBar from '../actions/IssueActionsBar';
@@ -70,8 +73,13 @@ export default function IssueDetailContent({
     uploadFile,
     imageAttachments,
     setDescEditor,
+    activityView,
   } = useIssueDetail(project, issueId, onIssueLoaded);
-  const canEdit = usePermissions(project).can('work_items', 'edit');
+  const permissions = usePermissions(project);
+  const canEdit = permissions.can('work_items', 'edit');
+  const canManageDevelopment = permissions.can('repositories', 'edit');
+  const canReadDocuments = permissions.can('documents', 'read');
+  const canLinkDocuments = canEdit && permissions.can('documents', 'edit');
   const features = useProjectFeatures();
   useFilePaste(canEdit && issue ? (files) => void attachFiles(files) : null);
   const properties = usePersistedOpen('issue-properties-open');
@@ -131,7 +139,7 @@ export default function IssueDetailContent({
       </div>
 
       {(canEdit || issue.description.trim() !== '') && (
-        <IssueMarkdownEditor
+        <MarkdownEditor
           className="mt-4"
           placeholder={tEditor('descriptionPlaceholder')}
           defaultValue={issue.description}
@@ -181,6 +189,24 @@ export default function IssueDetailContent({
       {features.checklists && <IssueChecklistsPanel issue={issue} />}
 
       {features.timeLogging && <IssueWorklogPanel project={project} issue={issue} />}
+
+      <IssueDevelopmentPanel
+        issueId={issue.id}
+        identifier={issue.identifier}
+        issueTitle={issue.title}
+        links={issue.development ?? []}
+        canEdit={canEdit}
+        canManage={canManageDevelopment}
+      />
+
+      {features.documents && (
+        <IssueDocumentsPanel
+          projectKey={project.project.ref}
+          issueId={issue.id}
+          canRead={canReadDocuments}
+          canLink={canLinkDocuments}
+        />
+      )}
 
       <IssueLinksPanel project={project} issue={issue} />
     </>
@@ -245,6 +271,7 @@ export default function IssueDetailContent({
           assignees={project.assignees}
           columns={project.columns}
           imageByUserId={imageByUserId}
+          view={activityView}
         />
       </div>
       <LastCommentBubble
@@ -252,6 +279,7 @@ export default function IssueDetailContent({
         issueId={issue.id}
         feedRef={feedRef}
         imageByUserId={imageByUserId}
+        view={activityView}
       />
     </>
   );

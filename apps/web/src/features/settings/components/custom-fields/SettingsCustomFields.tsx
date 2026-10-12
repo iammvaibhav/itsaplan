@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ChevronRight, Plus } from 'lucide-react';
-import { type CustomField, type ProjectDetail } from '@/lib/api';
+import type { CustomField } from '@/lib/api/endpoints/customFields';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import SettingsConfirmDeleteDialog from '../crud/SettingsConfirmDeleteDialog';
@@ -20,7 +21,7 @@ import SettingsCustomFieldDialog, { type FieldFormValues } from './SettingsCusto
 type AddScope = 'global' | number;
 
 export default function SettingsCustomFields({ project }: { project: ProjectDetail }) {
-  const projectKey = project.project.key;
+  const projectKey = project.project.ref;
   const [addingScope, setAddingScope] = useState<AddScope | null>(null);
   const [editing, setEditing] = useState<CustomField | null>(null);
   const [deleting, setDeleting] = useState<CustomField | null>(null);

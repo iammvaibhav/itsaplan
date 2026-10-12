@@ -1,4 +1,5 @@
-import { type BulkIssuePatch, type ProjectDetail, type SubtaskDisposition } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { BulkIssuePatch, SubtaskDisposition } from '@/lib/api/endpoints/issues';
 import {
   useBulkAddLabels,
   useBulkArchiveIssues,
@@ -10,7 +11,7 @@ import {
 // endpoints. The bar calls these with the current id set; cache updates and
 // invalidation live in the mutations.
 export function useBulkActions(project: ProjectDetail) {
-  const key = project.project.key;
+  const key = project.project.ref;
   const update = useBulkUpdateIssues(key);
   const addLabels = useBulkAddLabels(key);
   const archive = useBulkArchiveIssues(key);

@@ -6,7 +6,7 @@ import { settingsSection } from '@/utils/settingsSections';
 import { useSettingsSectionText } from '@/hooks/useSectionLabels';
 import SectionPageView from '@/components/common/page/SectionPageView';
 import RequirePermission from '@/components/common/permissions/RequirePermission';
-import { useAiAgentsQuery } from '@/services/aiAgents.service';
+import { useProjectAgents } from '@/hooks/useProjectAgents';
 import { SettingsResourceProvider } from './context/settingsPermission';
 import { SettingsHeaderAddButton } from './components/crud/SettingsHeaderAddButton';
 import SettingsSchedules from './components/schedules/SettingsSchedules';
@@ -14,14 +14,14 @@ import { useTranslations } from 'next-intl';
 
 const section = settingsSection('schedules');
 
-// The Schedules page (/project/:projectKey/ai-team/schedules), listed in the main
+// The Schedules page (/:team/:projectKey/agents/schedules), listed in the main
 // sidebar's AI Team group.
 export default function SettingsSchedulesPage() {
   const t = useTranslations('settings.schedules');
   const sectionText = useSettingsSectionText()(section.slug);
   const { project } = useShell();
   const [addNew, setAddNew] = useState(false);
-  const agents = useAiAgentsQuery(project?.project.key ?? null).data ?? [];
+  const agents = useProjectAgents().data ?? [];
   if (!project) return null;
   return (
     <SectionPageView

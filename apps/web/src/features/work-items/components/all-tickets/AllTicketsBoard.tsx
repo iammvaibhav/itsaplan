@@ -7,17 +7,16 @@ import { DndContext, type DragStartEvent, type DragEndEvent } from '@dnd-kit/cor
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Eye, Search, X } from 'lucide-react';
 import {
-  api,
   type AllTicket,
   type AllTickets,
   type BoardIssue,
-  type Column,
   type IssuePatch,
-  type IssueType,
-  type Label,
-  type Assignee,
-  type ProjectDetail,
-} from '@/lib/api';
+  updateIssue,
+} from '@/lib/api/endpoints/issues';
+import type { Column } from '@/lib/api/endpoints/columns';
+import type { IssueType } from '@/lib/api/endpoints/issueTypes';
+import type { Label } from '@/lib/api/endpoints/labels';
+import { type Assignee, type ProjectDetail, getProject } from '@/lib/api/endpoints/projects';
 import { useDndSensors } from '@/lib/dnd';
 import { issuePath } from '@/utils/paths';
 import { defaultViewSettings } from '@/utils/viewSettings';
@@ -92,8 +91,8 @@ export default function AllTicketsBoard() {
   const { data: projects } = useProjectsQuery();
   const projectQueries = useQueries({
     queries: (projects ?? []).map((p) => ({
-      queryKey: qk.project(p.key),
-      queryFn: () => api.getProject(p.key),
+      queryKey: qk.project(p.ref),
+      queryFn: () => getProject(p.ref),
       staleTime: 1000 * 60 * 5,
     })),
   });
@@ -106,7 +105,7 @@ export default function AllTicketsBoard() {
       const p = projects![i];
       const scaffold = projectQueries[i]?.data;
       if (scaffold?.columns) {
-        byProjectKey.set(p.key, scaffold.columns);
+        byProjectKey.set(p.ref, scaffold.columns);
         for (const col of scaffold.columns) {
           if (!colMap.has(col.name)) {
             colMap.set(col.name, {
@@ -121,10 +120,10 @@ export default function AllTicketsBoard() {
     }
 
     for (const t of rawTickets) {
-      if (!byProjectKey.has(t.projectKey)) {
-        byProjectKey.set(t.projectKey, []);
+      if (!byProjectKey.has(t.projectRef)) {
+        byProjectKey.set(t.projectRef, []);
       }
-      const list = byProjectKey.get(t.projectKey)!;
+      const list = byProjectKey.get(t.projectRef)!;
       if (!list.some((c) => c.id === t.columnId)) {
         list.push({
           id: t.columnId,
@@ -231,6 +230,8 @@ export default function AllTicketsBoard() {
           kind: 'member',
           agentKind: null,
           restrictedToUserId: null,
+          respondsToMention: null,
+          canReadWorkItems: true,
         });
       }
       for (const label of ticket.labels) {
@@ -262,21 +263,28 @@ export default function AllTicketsBoard() {
     () => ({
       project: {
         id: 0,
+        teamId: 0,
+        teamName: '',
+        teamRef: '',
         key: '',
+        ref: '',
         name: '',
         description: '',
         mcpEnabled: false,
+        teamMcpEnabled: false,
+        initiativesEnabled: false,
         dashboardsEnabled: false,
+        documentsEnabled: false,
         notesEnabled: false,
+        cyclesEnabled: false,
+        subtasksEnabled: false,
         checklistsEnabled: false,
         issueStatsEnabled: false,
-        cyclesEnabled: false,
-        initiativesEnabled: false,
-        subtasksEnabled: false,
-        timeTrackingEnabled: false,
-        timeLoggingEnabled: false,
+        availableFeatures: [],
         pointsEstimateEnabled: false,
         timeEstimateEnabled: false,
+        timeLoggingEnabled: false,
+        archivedAt: null,
         createdAt: '',
       },
       columns: Array.from(maps.columnById.values()),
@@ -285,7 +293,8 @@ export default function AllTicketsBoard() {
       labelGroups: [],
       assignees: Array.from(maps.assigneeById.values()),
       customFields: [],
-      viewer: { role: 'member' },
+      issueTemplates: [],
+      viewer: { role: 'member', teamRole: null, via: 'member' },
       permissions: {} as unknown as ProjectDetail['permissions'],
       issues: allBoardIssues,
       plannedCycles: [],
@@ -330,7 +339,7 @@ export default function AllTicketsBoard() {
   const qc = useQueryClient();
   const updateMutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; projectKey: string; patch: IssuePatch }) =>
-      api.updateIssue(id, patch),
+      updateIssue(id, patch),
     onSettled: (_data, _err, vars) => {
       void qc.invalidateQueries({ queryKey: ['allTickets'] });
       if (vars?.projectKey) {
@@ -358,7 +367,7 @@ export default function AllTicketsBoard() {
         idsToMove.forEach((id, n) => {
           const t = old.issues.find((item) => item.id === id);
           if (!t) return;
-          const projectCols = columnsByProjectKey.get(t.projectKey) ?? [];
+          const projectCols = columnsByProjectKey.get(t.projectRef) ?? [];
           const targetCol =
             projectCols.find((c) => c.name.toLowerCase() === group.name.toLowerCase()) ??
             projectCols.find((c) => c.stateType === group.stateType);
@@ -388,14 +397,14 @@ export default function AllTicketsBoard() {
       idsToMove.forEach((id, n) => {
         const ticket = rawTickets.find((t) => t.id === id);
         if (!ticket) return;
-        const projectCols = columnsByProjectKey.get(ticket.projectKey) ?? [];
+        const projectCols = columnsByProjectKey.get(ticket.projectRef) ?? [];
         const targetCol =
           projectCols.find((c) => c.name.toLowerCase() === group.name.toLowerCase()) ??
           projectCols.find((c) => c.stateType === group.stateType);
         if (!targetCol) return;
         updateMutation.mutate({
           id: ticket.id,
-          projectKey: ticket.projectKey,
+          projectKey: ticket.projectRef,
           patch: {
             columnId: targetCol.id,
             position: positions[n],
@@ -553,9 +562,9 @@ export default function AllTicketsBoard() {
 function TicketSidePanel({ ticket, onClose }: { ticket: AllTicket; onClose: () => void }) {
   const router = useRouter();
   const tCommon = useTranslations('common');
-  const projectQuery = useProjectQuery(ticket.projectKey);
+  const projectQuery = useProjectQuery(ticket.projectRef);
   const cyclesQuery = useCycleOptionsQuery(
-    projectQuery.data?.project.cyclesEnabled ? ticket.projectKey : null,
+    projectQuery.data?.project.cyclesEnabled ? ticket.projectRef : null,
   );
 
   const projectDetail: ProjectDetail | null = useMemo(() => {
@@ -600,7 +609,7 @@ function TicketSidePanel({ ticket, onClose }: { ticket: AllTicket; onClose: () =
       issueId={ticket.id}
       onClose={onClose}
       onExpand={(seq) => {
-        router.push(issuePath(ticket.projectKey, seq ?? ticket.sequenceNumber));
+        router.push(issuePath(ticket.projectRef, seq ?? ticket.sequenceNumber));
         onClose();
       }}
     />

@@ -5,11 +5,15 @@ import { authContext } from '#shared/auth-context';
 import { HttpError } from '#shared/lib';
 import { accessErrors, commonErrors, errors } from '#shared/responses';
 import { mcpTool } from '#mcp/generate';
+import { paginate } from '#shared/pagination';
+import { teamParams } from '#modules/teams/model';
 import { MAX_SKILL_BYTES, importGithubSkill, discoverGithubSkills } from './skill-format';
 import {
   DiscoveredSkillListResponse,
   RefContentResponse,
   SkillListResponse,
+  SkillPageResponse,
+  skillListQuery,
   SkillMarkdownResponse,
   SkillResponse,
   agentParams,
@@ -24,6 +28,7 @@ import {
 } from './model';
 import {
   listSkills,
+  listSkillOptions,
   getSkill,
   getSkillMarkdown,
   getSkillRefContent,
@@ -37,12 +42,18 @@ import {
   listAgentSkills,
   setAgentSkills,
 } from './service';
-import { agentInProject } from '../core/service';
+import { agentInTeam, agentScopeOf } from '../core/service';
 
 // Reference-file bytes are capped like the skill markdown.
 const MAX_REF_BYTES = MAX_SKILL_BYTES;
 
-// Gated under the agent_skills resource (the project skill library).
+// The skill library belongs to the team and serves every project it owns, so the
+// routes sit under :teamId, gated by the agent_skills resource on the team: its owner
+// and managers always, an owner of one of its projects always, another member when a
+// project role of theirs grants it.
+//
+// Which skills an agent has enabled sits under :teamId too — the agent belongs to the
+// team, and only that team's skills may be enabled on it.
 export const agentSkillRoutes = new Elysia({
   name: 'agent-skills',
   detail: { tags: ['Agent Skills'] },
@@ -50,26 +61,51 @@ export const agentSkillRoutes = new Elysia({
   .use(authContext)
   .use(guards)
 
-  .get('/projects/:projectKey/agent-skills', ({ project }) => listSkills(project.id), {
-    permission: ['agent_skills', 'read'],
-    response: { 200: SkillListResponse, ...accessErrors },
-    detail: {
-      summary: 'List agent skills',
-      description: "List the project's skill library, each skill with its reference files.",
-      ...mcpTool('list_agent_skills'),
+  .get(
+    '/teams/:teamId/agent-skills',
+    ({ membership, query }) => paginate(query, (window) => listSkills(membership.teamId, window)),
+    {
+      params: teamParams,
+      query: skillListQuery,
+      teamPermission: ['agent_skills', 'read'],
+      response: { 200: SkillPageResponse, ...accessErrors },
+      detail: {
+        summary: 'List agent skills',
+        description:
+          "One page of the team's skill library, each skill with its reference files. The " +
+          'whole library, for a picker, comes from list_agent_skill_options.',
+        ...mcpTool('list_agent_skills'),
+      },
     },
-  })
+  )
 
   .get(
-    '/projects/:projectKey/agent-skills/:skillId',
-    async ({ params, project }) => {
-      const skill = await getSkill(params.skillId, project.id);
+    '/teams/:teamId/agent-skills/options',
+    ({ membership }) => listSkillOptions(membership.teamId),
+    {
+      params: teamParams,
+      teamPermission: ['agent_skills', 'read'],
+      response: { 200: SkillListResponse, ...accessErrors },
+      detail: {
+        summary: 'List every agent skill',
+        description:
+          "The team's whole skill library, for the picker that enables skills on an agent. " +
+          'Use list_agent_skills to read it a page at a time.',
+        ...mcpTool('list_agent_skill_options'),
+      },
+    },
+  )
+
+  .get(
+    '/teams/:teamId/agent-skills/:skillId',
+    async ({ params, membership }) => {
+      const skill = await getSkill(params.skillId, membership.teamId);
       if (!skill) throw new HttpError(404, 'Skill not found');
       return skill;
     },
     {
       params: skillParams,
-      permission: ['agent_skills', 'read'],
+      teamPermission: ['agent_skills', 'read'],
       response: { 200: SkillResponse, ...accessErrors },
       detail: {
         summary: 'Get an agent skill',
@@ -82,14 +118,14 @@ export const agentSkillRoutes = new Elysia({
 
   // The full SKILL.md content, for the editor and to display the skill.
   .get(
-    '/projects/:projectKey/agent-skills/:skillId/markdown',
-    async ({ params, project }) => {
-      const markdown = await getSkillMarkdown(params.skillId, project.id);
+    '/teams/:teamId/agent-skills/:skillId/markdown',
+    async ({ params, membership }) => {
+      const markdown = await getSkillMarkdown(params.skillId, membership.teamId);
       return { markdown };
     },
     {
       params: skillParams,
-      permission: ['agent_skills', 'read'],
+      teamPermission: ['agent_skills', 'read'],
       response: { 200: SkillMarkdownResponse, ...accessErrors },
       detail: {
         summary: 'Get skill markdown',
@@ -101,15 +137,15 @@ export const agentSkillRoutes = new Elysia({
 
   // The text content of one reference file, for the editor.
   .get(
-    '/projects/:projectKey/agent-skills/:skillId/references/content',
-    async ({ params, project, query }) => {
-      const content = await getSkillRefContent(params.skillId, project.id, query.path);
+    '/teams/:teamId/agent-skills/:skillId/references/content',
+    async ({ params, membership, query }) => {
+      const content = await getSkillRefContent(params.skillId, membership.teamId, query.path);
       return { content };
     },
     {
       params: skillParams,
       query: refPathQuery,
-      permission: ['agent_skills', 'read'],
+      teamPermission: ['agent_skills', 'read'],
       response: { 200: RefContentResponse, ...accessErrors },
       detail: {
         summary: 'Get reference file content',
@@ -121,11 +157,12 @@ export const agentSkillRoutes = new Elysia({
 
   // Feeds the import picker: the caller chooses which of the found skills to add.
   .post(
-    '/projects/:projectKey/agent-skills/github/discover',
+    '/teams/:teamId/agent-skills/github/discover',
     ({ body }) => discoverGithubSkills(body.url),
     {
+      params: teamParams,
       body: discoverSkillsBody,
-      permission: ['agent_skills', 'create'],
+      teamPermission: ['agent_skills', 'create'],
       response: { 200: DiscoveredSkillListResponse, ...commonErrors, ...errors(502) },
       detail: {
         summary: 'Discover GitHub skills',
@@ -138,8 +175,8 @@ export const agentSkillRoutes = new Elysia({
   )
 
   .post(
-    '/projects/:projectKey/agent-skills',
-    async ({ project, body, set }) => {
+    '/teams/:teamId/agent-skills',
+    async ({ membership, body, set }) => {
       if (body.source === 'github') {
         if (!body.sourceUrl)
           throw new HttpError(400, 'A GitHub URL is required for a github skill');
@@ -148,7 +185,7 @@ export const agentSkillRoutes = new Elysia({
           throw new HttpError(413, 'Skill markdown is too large');
         }
         set.status = 201;
-        return createSkillFromFiles(project.id, {
+        return createSkillFromFiles(membership.teamId, {
           name: body.name ?? null,
           description: body.description ?? null,
           markdown: imported.markdown,
@@ -163,7 +200,7 @@ export const agentSkillRoutes = new Elysia({
       if (markdown.length > MAX_SKILL_BYTES)
         throw new HttpError(413, 'Skill markdown is too large');
       set.status = 201;
-      return createSkill(project.id, {
+      return createSkill(membership.teamId, {
         name: body.name ?? null,
         description: body.description ?? null,
         markdown,
@@ -172,8 +209,9 @@ export const agentSkillRoutes = new Elysia({
       });
     },
     {
+      params: teamParams,
       body: createSkillBody,
-      permission: ['agent_skills', 'create'],
+      teamPermission: ['agent_skills', 'create'],
       response: { 201: SkillResponse, ...commonErrors, ...errors(409, 413, 502) },
       detail: {
         summary: 'Create an agent skill',
@@ -185,19 +223,19 @@ export const agentSkillRoutes = new Elysia({
   )
 
   .patch(
-    '/projects/:projectKey/agent-skills/:skillId',
-    async ({ params, project, body }) => {
+    '/teams/:teamId/agent-skills/:skillId',
+    async ({ params, membership, body }) => {
       if (body.markdown !== undefined && body.markdown.length > MAX_SKILL_BYTES) {
         throw new HttpError(413, 'Skill markdown is too large');
       }
-      const skill = await updateSkill(params.skillId, project.id, body);
+      const skill = await updateSkill(params.skillId, membership.teamId, body);
       if (!skill) throw new HttpError(404, 'Skill not found');
       return skill;
     },
     {
       body: updateSkillBody,
       params: skillParams,
-      permission: ['agent_skills', 'edit'],
+      teamPermission: ['agent_skills', 'edit'],
       response: { 200: SkillResponse, ...commonErrors, ...errors(409, 413) },
       detail: {
         summary: 'Update an agent skill',
@@ -208,15 +246,15 @@ export const agentSkillRoutes = new Elysia({
   )
 
   .delete(
-    '/projects/:projectKey/agent-skills/:skillId',
-    async ({ params, project }) => {
-      const ok = await deleteSkill(params.skillId, project.id);
+    '/teams/:teamId/agent-skills/:skillId',
+    async ({ params, membership }) => {
+      const ok = await deleteSkill(params.skillId, membership.teamId);
       if (!ok) throw new HttpError(404, 'Skill not found');
       return noContent();
     },
     {
       params: skillParams,
-      permission: ['agent_skills', 'delete'],
+      teamPermission: ['agent_skills', 'delete'],
       response: { 204: t.Void(), ...accessErrors },
       detail: {
         summary: 'Delete an agent skill',
@@ -229,8 +267,8 @@ export const agentSkillRoutes = new Elysia({
   // Uploads a reference file (multipart "file" field). Executable file types are
   // rejected — a skill carries knowledge, not runnable scripts.
   .post(
-    '/projects/:projectKey/agent-skills/:skillId/references',
-    async ({ params, project, body }) => {
+    '/teams/:teamId/agent-skills/:skillId/references',
+    async ({ params, membership, body }) => {
       const file = body.file;
       if (!(file instanceof File)) throw new HttpError(400, 'No file uploaded (form field "file")');
       if (file.size === 0) throw new HttpError(400, 'Uploaded file is empty');
@@ -238,7 +276,7 @@ export const agentSkillRoutes = new Elysia({
       const bytes = Buffer.from(await file.arrayBuffer());
       const skill = await addReference(
         params.skillId,
-        project.id,
+        membership.teamId,
         file.name || 'file',
         bytes,
         file.type || 'application/octet-stream',
@@ -249,7 +287,7 @@ export const agentSkillRoutes = new Elysia({
     {
       body: uploadReferenceBody,
       params: skillParams,
-      permission: ['agent_skills', 'edit'],
+      teamPermission: ['agent_skills', 'edit'],
       response: { 200: SkillResponse, ...commonErrors, ...errors(413) },
       detail: {
         summary: 'Add a reference file',
@@ -260,13 +298,13 @@ export const agentSkillRoutes = new Elysia({
 
   // The editor's save of a reference file.
   .patch(
-    '/projects/:projectKey/agent-skills/:skillId/references/content',
-    async ({ params, project, body }) => {
+    '/teams/:teamId/agent-skills/:skillId/references/content',
+    async ({ params, membership, body }) => {
       const bytes = Buffer.from(body.content, 'utf8');
       if (bytes.length > MAX_REF_BYTES) throw new HttpError(413, 'Reference file is too large');
       const skill = await updateReference(
         params.skillId,
-        project.id,
+        membership.teamId,
         body.path,
         bytes,
         'text/markdown',
@@ -277,7 +315,7 @@ export const agentSkillRoutes = new Elysia({
     {
       body: updateReferenceBody,
       params: skillParams,
-      permission: ['agent_skills', 'edit'],
+      teamPermission: ['agent_skills', 'edit'],
       response: { 200: SkillResponse, ...commonErrors, ...errors(413) },
       detail: {
         summary: 'Update reference file content',
@@ -288,16 +326,16 @@ export const agentSkillRoutes = new Elysia({
   )
 
   .delete(
-    '/projects/:projectKey/agent-skills/:skillId/references',
-    async ({ params, project, query }) => {
-      const skill = await deleteReference(params.skillId, project.id, query.path);
+    '/teams/:teamId/agent-skills/:skillId/references',
+    async ({ params, membership, query }) => {
+      const skill = await deleteReference(params.skillId, membership.teamId, query.path);
       if (!skill) throw new HttpError(404, 'Skill not found');
       return skill;
     },
     {
       params: skillParams,
       query: refPathQuery,
-      permission: ['agent_skills', 'edit'],
+      teamPermission: ['agent_skills', 'edit'],
       response: { 200: SkillResponse, ...accessErrors },
       detail: {
         summary: 'Delete a reference file',
@@ -308,16 +346,16 @@ export const agentSkillRoutes = new Elysia({
   )
 
   .get(
-    '/projects/:projectKey/ai-agents/:agentId/skills',
-    async ({ params, project }) => {
-      if (!(await agentInProject(params.agentId, project.id))) {
+    '/teams/:teamId/ai-agents/:agentId/skills',
+    async ({ params, membership }) => {
+      if (!(await agentInTeam(params.agentId, membership.teamId, agentScopeOf(membership)))) {
         throw new HttpError(404, 'Agent not found');
       }
       return listAgentSkills(params.agentId);
     },
     {
       params: agentParams,
-      permission: ['agent_skills', 'read'],
+      teamPermission: ['agent_skills', 'read'],
       response: { 200: SkillListResponse, ...accessErrors },
       detail: {
         summary: "List an agent's enabled skills",
@@ -328,23 +366,23 @@ export const agentSkillRoutes = new Elysia({
   )
 
   .put(
-    '/projects/:projectKey/ai-agents/:agentId/skills',
-    async ({ params, project, body }) => {
-      if (!(await agentInProject(params.agentId, project.id))) {
+    '/teams/:teamId/ai-agents/:agentId/skills',
+    async ({ params, membership, body }) => {
+      if (!(await agentInTeam(params.agentId, membership.teamId, agentScopeOf(membership)))) {
         throw new HttpError(404, 'Agent not found');
       }
-      await setAgentSkills(params.agentId, project.id, body.skillIds);
+      await setAgentSkills(params.agentId, membership.teamId, body.skillIds);
       return listAgentSkills(params.agentId);
     },
     {
       body: setAgentSkillsBody,
       params: agentParams,
-      permission: ['agent_skills', 'edit'],
+      teamPermission: ['agent_skills', 'edit'],
       response: { 200: SkillListResponse, ...commonErrors },
       detail: {
         summary: "Set an agent's enabled skills",
         description:
-          'Replace the set of skills enabled on an agent. Ids that are not skills of this project are ignored.',
+          "Replace the set of skills enabled on an agent. Ids that are not skills of the agent's team are ignored.",
         ...mcpTool('set_ai_agent_skills'),
       },
     },

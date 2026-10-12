@@ -77,6 +77,14 @@ describe('issue activity', () => {
       expect(res.status).toBe(400);
     });
 
+    it('accepts a comment body of 50000 characters and rejects a longer one', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comments = asOwner.issues({ issueId: issue.id }).comments;
+      expect((await comments.post({ body: 'x'.repeat(50_000) })).status).toBe(201);
+      expect((await comments.post({ body: 'x'.repeat(50_001) })).status).toBe(400);
+    });
+
     it('returns 404 when commenting on a missing issue', async () => {
       const { asOwner } = await setupProject();
       const res = await asOwner.issues({ issueId: 999999 }).comments.post({ body: 'x' });
@@ -142,6 +150,62 @@ describe('issue activity', () => {
       const { asOwner } = await setupProject();
       const res = await feed(asOwner, 999999);
       expect(res.status).toBe(404);
+    });
+
+    it('serves the oldest entries first for order=asc, paging forward', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      for (const body of ['a', 'b', 'c']) {
+        await asOwner.issues({ issueId: issue.id }).comments.post({ body });
+      }
+
+      const first = await feed(asOwner, issue.id, { order: 'asc', filter: 'comments', limit: '2' });
+      expect(first.data!.items.map((i) => i.body)).toEqual(['a', 'b']);
+      const second = await feed(asOwner, issue.id, {
+        order: 'asc',
+        filter: 'comments',
+        limit: '2',
+        cursor: JSON.stringify(first.data!.nextCursor),
+      });
+      expect(second.data!.items.map((i) => i.body)).toEqual(['c']);
+      expect(second.data!.nextCursor).toBeNull();
+    });
+
+    it('narrows the page to comments, the change log, or the work log', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'hi' }))
+        .data!;
+      await asOwner
+        .issues({ issueId: issue.id })
+        .comments.post({ body: 'reply', replyToId: comment.id });
+      await asOwner
+        .issues({ issueId: issue.id })
+        .worklogs.post({ minutes: 30, spentOn: new Date().toISOString().slice(0, 10) });
+
+      const comments = await feed(asOwner, issue.id, { filter: 'comments' });
+      expect(comments.data!.items.map((i) => i.body)).toEqual(['hi', 'reply']);
+      const history = await feed(asOwner, issue.id, { filter: 'history' });
+      expect(history.data!.items.map((i) => i.action)).toEqual(['created']);
+      const worklog = await feed(asOwner, issue.id, { filter: 'worklog' });
+      expect(worklog.data!.items.map((i) => i.action)).toEqual(['worklog']);
+    });
+
+    it('counts the entries behind each filter, replies included', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'hi' }))
+        .data!;
+      await asOwner
+        .issues({ issueId: issue.id })
+        .comments.post({ body: 'reply', replyToId: comment.id });
+      await asOwner
+        .issues({ issueId: issue.id })
+        .worklogs.post({ minutes: 30, spentOn: new Date().toISOString().slice(0, 10) });
+
+      const res = await asOwner.issues({ issueId: issue.id }).feed.counts.get();
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual({ all: 4, comments: 2, history: 1, worklog: 1 });
     });
   });
 
@@ -533,6 +597,26 @@ describe('issue activity', () => {
       expect(bodies).toEqual([['after the move'], ['before the move']]);
     });
 
+    it('runs the stretches oldest first for order=asc', async () => {
+      const { asOwner, columnId, columnIds } = await setupProject();
+      const view = await asOwner.projects({ projectKey: 'MKT' }).get();
+      const names = new Map(view.data!.columns.map((c) => [c.id, c.name]));
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'before the move' });
+      await asOwner.issues({ issueId: issue.id }).patch({ columnId: columnIds[1] });
+      await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'after the move' });
+
+      const res = await grouped(asOwner, issue.id, { order: 'asc', filter: 'comments' });
+      expect(res.data!.groups.map((g) => g.status)).toEqual([
+        names.get(columnId)!,
+        names.get(columnIds[1])!,
+      ]);
+      expect(res.data!.groups.map((g) => g.items.map((i) => i.body))).toEqual([
+        ['before the move'],
+        ['after the move'],
+      ]);
+    });
+
     it('marks a status the issue had already been in as a repeat', async () => {
       const { asOwner, columnId, columnIds } = await setupProject();
       const issue = (await createIssue(asOwner, columnId)).data!;
@@ -570,6 +654,163 @@ describe('issue activity', () => {
     it('returns 404 for a missing issue', async () => {
       const { asOwner } = await setupProject();
       expect((await grouped(asOwner, 999999)).status).toBe(404);
+    });
+  });
+
+  describe('comment lifecycle', () => {
+    // A second project member, invited and accepted the way watchers.test.ts does.
+    async function addMember(ownerClient: Api): Promise<{ api: Api; user: TestUser }> {
+      const user = await signUpTestUser({ name: 'Member' });
+      const invite = await ownerClient
+        .projects({ projectKey: 'MKT' })
+        .invites.post({ email: user.email, role: 'member' });
+      const api = authedApi(user.cookie);
+      await api.invites({ token: invite.data!.token }).accept.post();
+      return { api, user };
+    }
+
+    it('lets the author edit their own comment', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'draft' }))
+        .data!;
+      expect(comment.editedAt).toBeNull();
+
+      const res = await asOwner.comments({ commentId: comment.id }).patch({ body: 'final' });
+      expect(res.status).toBe(200);
+      expect(res.data).toMatchObject({ id: comment.id, body: 'final' });
+      expect(res.data?.editedAt).toBeTruthy();
+
+      const page = await feed(asOwner, issue.id);
+      expect(page.data?.items.find((i) => i.id === comment.id)?.body).toBe('final');
+    });
+
+    it('bounds an edited comment the way a new one is bounded', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'draft' }))
+        .data!;
+      const edit = asOwner.comments({ commentId: comment.id });
+      expect((await edit.patch({ body: 'x'.repeat(50_000) })).status).toBe(200);
+      expect((await edit.patch({ body: 'x'.repeat(50_001) })).status).toBe(400);
+    });
+
+    it('logs the edit and the delete in the feed', async () => {
+      const { asOwner, owner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'draft' }))
+        .data!;
+
+      await asOwner.comments({ commentId: comment.id }).patch({ body: 'final' });
+      await asOwner.comments({ commentId: comment.id }).delete();
+
+      const actions = (await feed(asOwner, issue.id))
+        .data!.items.filter((i) => i.kind === 'activity' && i.actorUserId === owner.userId)
+        .map((i) => i.action);
+      expect(actions).toContain('comment_edited');
+      expect(actions).toContain('comment_deleted');
+    });
+
+    it('notifies only the mentions an edit newly adds', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const member = await addMember(asOwner);
+      const handle = `@${member.user.username}`;
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'draft' }))
+        .data!;
+
+      await asOwner.comments({ commentId: comment.id }).patch({ body: `over to ${handle}` });
+      // A second edit that keeps the same handle tells nobody again.
+      await asOwner.comments({ commentId: comment.id }).patch({ body: `still over to ${handle}` });
+
+      const inbox = await member.api.notifications.get({ query: { types: 'mentioned' } });
+      expect(inbox.data!.items).toHaveLength(1);
+      expect(inbox.data!.items[0]).toMatchObject({ type: 'mentioned', issueId: issue.id });
+    });
+
+    it('lets a project owner edit another member’s comment', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const member = await addMember(asOwner);
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (
+        await member.api.issues({ issueId: issue.id }).comments.post({ body: 'member note' })
+      ).data!;
+
+      const res = await asOwner.comments({ commentId: comment.id }).patch({ body: 'reworded' });
+      expect(res.status).toBe(200);
+      expect(res.data?.body).toBe('reworded');
+    });
+
+    it('forbids a member editing or deleting another member’s comment', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const member = await addMember(asOwner);
+      const other = await addMember(asOwner);
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (
+        await member.api.issues({ issueId: issue.id }).comments.post({ body: 'mine' })
+      ).data!;
+
+      expect(
+        (await other.api.comments({ commentId: comment.id }).patch({ body: 'not yours' })).status,
+      ).toBe(403);
+      expect((await other.api.comments({ commentId: comment.id }).delete()).status).toBe(403);
+    });
+
+    it('rejects editing an activity entry, which is not a comment', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const page = await feed(asOwner, issue.id);
+      const activity = page.data!.items.find((i) => i.kind === 'activity')!;
+
+      expect(
+        (await asOwner.comments({ commentId: activity.id }).patch({ body: 'rewrite' })).status,
+      ).toBe(404);
+      expect((await asOwner.comments({ commentId: activity.id }).delete()).status).toBe(404);
+    });
+
+    it('rejects an empty body and a missing comment', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'keep' }))
+        .data!;
+
+      expect((await asOwner.comments({ commentId: comment.id }).patch({ body: '' })).status).toBe(
+        400,
+      );
+      expect((await asOwner.comments({ commentId: 999999 }).patch({ body: 'x' })).status).toBe(404);
+      expect((await asOwner.comments({ commentId: 999999 }).delete()).status).toBe(404);
+    });
+
+    it('lets the author delete their own comment, replies and all', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'root' }))
+        .data!;
+      const reply = (
+        await asOwner
+          .issues({ issueId: issue.id })
+          .comments.post({ body: 'answer', replyToId: comment.id })
+      ).data!;
+
+      const res = await asOwner.comments({ commentId: comment.id }).delete();
+      expect(res.status).toBe(204);
+
+      const page = await feed(asOwner, issue.id);
+      const ids = page.data!.items.map((i) => i.id);
+      expect(ids).not.toContain(comment.id);
+      expect(ids).not.toContain(reply.id);
+    });
+
+    it('lets a project owner delete another member’s comment', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const member = await addMember(asOwner);
+      const issue = (await createIssue(asOwner, columnId)).data!;
+      const comment = (
+        await member.api.issues({ issueId: issue.id }).comments.post({ body: 'spam' })
+      ).data!;
+
+      const res = await asOwner.comments({ commentId: comment.id }).delete();
+      expect(res.status).toBe(204);
     });
   });
 

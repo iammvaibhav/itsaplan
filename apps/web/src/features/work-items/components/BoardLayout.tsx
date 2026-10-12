@@ -1,4 +1,4 @@
-import type { BoardIssue } from '@/lib/api';
+import type { BoardIssue } from '@/lib/api/endpoints/issues';
 import type { WorkItemsViewProps } from '@/utils/project';
 import type { WorkItemsView } from '@/utils/viewTypes';
 import { withoutShownSubtasks } from '@/utils/subtasks';
@@ -54,7 +54,11 @@ export default function BoardLayout({
 
   return (
     <IssueLinksProvider issues={allIssues} enabled={settings.showLinks}>
-      <SubtasksProvider issues={allIssues} enabled={subtasksEnabled && settings.showSubtasks}>
+      <SubtasksProvider
+        issues={allIssues}
+        enabled={subtasksEnabled && settings.showSubtasks}
+        collapsed={settings.collapseSubtasks}
+      >
         {renderLayout()}
       </SubtasksProvider>
     </IssueLinksProvider>

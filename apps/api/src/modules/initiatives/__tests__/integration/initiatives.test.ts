@@ -3,6 +3,7 @@ import { authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { addProjectMember } from '#tests/helpers/members';
+import { createRole } from '#tests/helpers/roles';
 
 // Initiatives are a project-scoped grouping of issues. Issues link to one through
 // issue.initiativeId. status is a fixed lifecycle enum; progress and health are
@@ -84,6 +85,26 @@ describe('initiatives', () => {
       const { asOwner } = await setup();
       const res = await createInitiative(asOwner, { title: 'X', status: 'shipping' });
       expect(res.status).toBe(400);
+    });
+
+    it('rejects a target date before the start date on create', async () => {
+      const { asOwner } = await setup();
+      const res = await createInitiative(asOwner, {
+        title: 'Q3',
+        startDate: '2026-09-08',
+        targetDate: '2026-08-30',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('allows a target date equal to the start date', async () => {
+      const { asOwner } = await setup();
+      const res = await createInitiative(asOwner, {
+        title: 'Q3',
+        startDate: '2026-09-08',
+        targetDate: '2026-09-08',
+      });
+      expect(res.status).toBe(201);
     });
 
     it('rejects an owner and labels from another project before creating', async () => {
@@ -204,6 +225,26 @@ describe('initiatives', () => {
       const got = await asOwner.initiatives({ initiativeId: created.id }).get();
       expect(got.status).toBe(200);
       expect(got.data).toMatchObject({ id: created.id, title: 'Q3' });
+    });
+
+    it('rejects a target date patched before the stored start date', async () => {
+      const { asOwner } = await setup();
+      const created = (await createInitiative(asOwner, { title: 'Q3', startDate: '2026-09-08' }))
+        .data!;
+      const res = await asOwner
+        .initiatives({ initiativeId: created.id })
+        .patch({ targetDate: '2026-08-30' });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a start date patched after the stored target date', async () => {
+      const { asOwner } = await setup();
+      const created = (await createInitiative(asOwner, { title: 'Q3', targetDate: '2026-08-30' }))
+        .data!;
+      const res = await asOwner
+        .initiatives({ initiativeId: created.id })
+        .patch({ startDate: '2026-09-08' });
+      expect(res.status).toBe(400);
     });
 
     it('returns 404 for a missing initiative', async () => {
@@ -384,9 +425,10 @@ describe('initiatives', () => {
     it('reads under work items, so a role without initiative access can link an issue', async () => {
       const { asOwner } = await setup();
       await createInitiative(asOwner, { title: 'Q3 Launch' });
-      const role = await asOwner
-        .projects({ projectKey: 'MKT' })
-        .roles.post({ name: 'Issues only', permissions: { work_items: { read: true } } });
+      const role = await createRole(asOwner, 'MKT', {
+        name: 'Issues only',
+        permissions: { work_items: { read: true } },
+      });
       const asMember = await addProjectMember(asOwner, 'MKT', role.data!.id);
 
       const options = await initiatives(asMember).options.get();
@@ -399,9 +441,7 @@ describe('initiatives', () => {
 
     it('denies a role without work item access', async () => {
       const { asOwner } = await setup();
-      const role = await asOwner
-        .projects({ projectKey: 'MKT' })
-        .roles.post({ name: 'Nothing', permissions: {} });
+      const role = await createRole(asOwner, 'MKT', { name: 'Nothing', permissions: {} });
       const asMember = await addProjectMember(asOwner, 'MKT', role.data!.id);
       expect((await initiatives(asMember).options.get()).status).toBe(403);
     });

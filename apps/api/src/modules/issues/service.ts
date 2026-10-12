@@ -5,13 +5,13 @@ import {
   issueStatus,
   issueLabel,
   label,
-  projectMember,
   projectColumn,
   issueType,
   user,
   issueFieldValue,
   issueFieldOption,
   issueAttachment,
+  issueKeyAlias,
   customField,
   customFieldOption,
   initiative,
@@ -35,7 +35,8 @@ import {
 } from 'drizzle-orm';
 import type { IssueQuery } from '#modules/agents/core/issue-query';
 import { iso, num, numOrNull, HttpError } from '#shared/lib';
-import type { ProjectRow } from '#modules/projects/service';
+import { listProjects, type ProjectRow } from '#modules/projects/service';
+import { assertProjectFeature } from '#shared/access';
 import {
   getCustomFieldById,
   type CustomFieldRow,
@@ -60,17 +61,17 @@ import { recordCycleChange } from './cycle-history';
 import { recordStatusChange } from './status-history';
 import { mapAttachment, type AttachmentRow } from '#modules/attachments/service';
 import { notifyIssueChange, notifyTextMentions } from '#modules/notifications/service';
-import { emitWebhookEvent } from '#modules/webhooks/emit';
+import { emitIssueEvent } from './webhook-payload';
 import {
   getAssignTriggerAgent,
   getFieldTriggerAgent,
   isProjectAgent,
 } from '#modules/agents/core/service';
-import { deleteThreadsWhere } from '#modules/agents/core/runtime/memory';
 import { getInitiativeProjectId } from '#modules/initiatives/service';
 import { cycleStatus, getCycleRef, type CycleStatus } from '#modules/cycles/service';
 import { getMembership } from '#modules/members/service';
 import { enqueueAgentRun } from '#modules/agents/core/run-queue';
+import { queueStatusRuns } from '#modules/agents/schedules/issue-runs';
 import { applySubtaskAutomation } from './automation';
 import { assertWipLimit, columnAutoAssignee, wipLimitBreach } from '#modules/columns/service';
 
@@ -92,7 +93,7 @@ export interface IssueRow {
   id: number;
   projectId: number;
   // Project-scoped sequence number (the "42" in "MKT-42"). Used to address the
-  // issue by its human number in URLs (/project/MKT/issue/42).
+  // issue by its human number in URLs (/acme/issue/MKT-42).
   sequenceNumber: number;
   identifier: string;
   typeId: number | null;
@@ -271,6 +272,8 @@ export interface AllTicketHit {
   id: number;
   projectId: number;
   projectKey: string;
+  // "<teamRef>.<key>": how the app's paths and the API name the project.
+  projectRef: string;
   projectName: string;
   sequenceNumber: number;
   identifier: string;
@@ -296,21 +299,23 @@ export interface AllTicketHit {
   labels: AllTicketLabel[];
 }
 
-// Every active issue in the projects the user is a member of — the union of the
-// per-project boards behind one read. Membership is the same check the access
-// guard applies per project, expressed as one EXISTS over project_member. Read
-// only by design (ADR 0002 keeps writes per-project): moves go through each
-// project's own PATCH /issues/:id.
+// Every active issue in the projects the user can see — the union of the
+// per-project boards behind one read. Which projects that is comes from
+// listProjects, so the rule matches the project picker (project members plus
+// teams granted through a workspace; archived projects excluded). Read only by
+// design (ADR 0002 keeps writes per-project): moves go through each project's
+// own PATCH /issues/:id.
 export async function listAllTickets(
   userId: string,
   filters: { stateType?: string; query?: string; limit?: number } = {},
 ): Promise<AllTicketHit[]> {
+  const visible = await listProjects(userId);
+  if (visible.length === 0) return [];
+  const refById = new Map(visible.map((p) => [p.id, p.ref]));
   const conds: SQL[] = [
-    exists(
-      db
-        .select({ one: sql`1` })
-        .from(projectMember)
-        .where(and(eq(projectMember.projectId, issue.projectId), eq(projectMember.userId, userId))),
+    inArray(
+      issue.projectId,
+      visible.map((p) => p.id),
     ),
     isNull(issue.archivedAt),
   ];
@@ -389,6 +394,7 @@ export async function listAllTickets(
 
   return rows.map((r) => ({
     ...r,
+    projectRef: refById.get(r.projectId) ?? r.projectKey,
     identifier: `${r.projectKey}-${r.sequenceNumber}`,
     updatedAt: iso(r.updatedAt),
     labels: labelsByIssue.get(r.id) ?? [],
@@ -581,10 +587,8 @@ export async function searchIssues(
 // Archives an issue: sets archived_at so it drops off the board and lists, keeping
 // the row for restore. Idempotent (archiving an archived issue is a no-op re-stamp
 // avoided by the archived_at guard). Records a feed entry. Returns the updated
-// issue, or null if it does not exist.
-//
-// The agents' conversation threads for the issue are deleted with it. Archiving is
-// reversible and this is not: a restored issue starts with empty agent memory.
+// issue, or null if it does not exist. Archiving is reversible, so nothing the issue
+// carries is dropped — the agents' conversation threads included.
 export async function archiveIssue(
   id: number,
   actorUserId?: string | null,
@@ -599,8 +603,9 @@ export async function archiveIssue(
     return getIssue(id);
   }
   await recordActivity(id, [{ action: 'archived' }], actorUserId);
-  await deleteThreadsWhere({ issueId: id });
-  return getIssue(id);
+  const archived = await getIssue(id);
+  if (archived) await emitIssueEvent('issue.updated', archived, actorUserId);
+  return archived;
 }
 
 // Restores an archived issue back onto the board (archived_at -> null). Records a
@@ -616,7 +621,9 @@ export async function restoreIssue(
     .returning({ id: issue.id });
   if (!row) return getIssue(id);
   await recordActivity(id, [{ action: 'restored' }], actorUserId);
-  return getIssue(id);
+  const restored = await getIssue(id);
+  if (restored) await emitIssueEvent('issue.updated', restored, actorUserId);
+  return restored;
 }
 
 // Expands what an issue is planned under — its initiative and its cycle — to
@@ -803,8 +810,10 @@ export async function getIssues(ids: number[]): Promise<IssueRow[]> {
 }
 
 // Loads an issue by its project-scoped sequence number (the human number in a URL
-// like /project/MKT/issue/42). Returns null if the project has no issue with that
-// number. Archived issues resolve too, so a link to one still opens.
+// like /acme/issue/MKT-42). Returns null if the project has no issue with that
+// number. Archived issues resolve too, so a link to one still opens, and so does the
+// number of an issue that moved to another project — the row returned then carries
+// its current project and identifier.
 export async function getIssueBySequence(
   projectId: number,
   sequenceNumber: number,
@@ -813,7 +822,23 @@ export async function getIssueBySequence(
     .select({ issue, projectKey: projectTable.key })
     .from(issue)
     .innerJoin(projectTable, eq(projectTable.id, issue.projectId))
-    .where(and(eq(issue.projectId, projectId), eq(issue.sequenceNumber, sequenceNumber)));
+    .where(
+      or(
+        and(eq(issue.projectId, projectId), eq(issue.sequenceNumber, sequenceNumber)),
+        exists(
+          db
+            .select({ id: issueKeyAlias.issueId })
+            .from(issueKeyAlias)
+            .where(
+              and(
+                eq(issueKeyAlias.issueId, issue.id),
+                eq(issueKeyAlias.projectId, projectId),
+                eq(issueKeyAlias.sequenceNumber, sequenceNumber),
+              ),
+            ),
+        ),
+      ),
+    );
   if (!rows[0]) return null;
   const mapped = mapIssue(rows[0].issue, rows[0].projectKey);
   await attachLabels([mapped]);
@@ -873,6 +898,7 @@ async function assertInitiative(
   initiativeId: number | null | undefined,
 ): Promise<void> {
   if (initiativeId == null) return;
+  await assertProjectFeature(projectId, 'initiatives');
   if ((await getInitiativeProjectId(initiativeId)) !== projectId)
     throw new HttpError(400, 'Initiative must belong to this project');
 }
@@ -888,6 +914,7 @@ async function assertCycle(
   currentCycleId: number | null = null,
 ): Promise<void> {
   if (cycleId == null || cycleId === currentCycleId) return;
+  await assertProjectFeature(projectId, 'cycles');
   const ref = await getCycleRef(cycleId);
   if (!ref || ref.projectId !== projectId)
     throw new HttpError(400, 'Cycle must belong to this project');
@@ -931,6 +958,7 @@ async function assertParent(
   parentId: number | null | undefined,
 ): Promise<void> {
   if (parentId == null) return;
+  await assertProjectFeature(projectId, 'subtasks');
   if (parentId === issueId) throw new HttpError(400, 'An issue cannot be its own parent');
   const rows = await db
     .select({ projectId: issue.projectId, parentId: issue.parentId })
@@ -967,6 +995,13 @@ async function assertIssueLabels(projectId: number, labelIds?: number[]): Promis
   if (rows.length !== ids.length) throw new HttpError(400, 'Labels must belong to this project');
 }
 
+// ISO 'YYYY-MM-DD' strings order correctly as plain strings. One date alone, or
+// the two equal, is fine.
+function assertDateOrder(startDate?: string | null, dueDate?: string | null) {
+  if (startDate && dueDate && dueDate < startDate)
+    throw new HttpError(400, 'Due date must not precede the start date');
+}
+
 // Atomic per-project sequence number (the "-42" in "MKT-42"): the UPDATE takes a
 // row lock on project, so concurrent createIssue calls for the same project never
 // hand out the same number.
@@ -982,6 +1017,7 @@ export async function createIssue(
   await assertWipLimit(input.columnId);
   await assertIssueType(project.id, input.typeId);
   await assertParent(project.id, null, input.parentId);
+  assertDateOrder(input.startDate, input.dueDate);
   // Also checked by setIssueLabels below, but here it fails before the issue exists.
   await assertIssueLabels(project.id, input.labelIds);
   // An issue created in a column enters it the same way a moved one does, so the
@@ -1037,10 +1073,11 @@ export async function createIssue(
   // The author follows what they filed; the assignee is subscribed by the
   // assignment notification below, the same as a later assignment does.
   await autoWatchIssue(project.id, issueId, [actorUserId]);
-  await emitWebhookEvent(project.id, 'issue.created', created);
+  await emitIssueEvent('issue.created', created, actorUserId);
   // An issue created already delegated to an agent enqueues a run, the same as
   // delegating one later does.
   await enqueueDelegateRun(created, actorUserId);
+  await queueStatusRuns([issueId], input.columnId, actorUserId);
   // An issue created already assigned to a member notifies them, the same as
   // assigning one later does.
   if (created.assigneeUserId) {
@@ -1080,7 +1117,7 @@ async function identifiers(ids: number[]): Promise<Map<number, string>> {
 
 // Writes a parent change to the feeds of every issue it concerns: the subtask reads
 // which parent it moved between, each parent reads the subtask it gained or lost.
-async function recordParentChange(
+export async function recordParentChange(
   childId: number,
   before: number | null,
   after: number | null,
@@ -1146,6 +1183,12 @@ export async function updateIssue(
   const before = await loadSnapshot(id);
   if (!before) return null;
 
+  // Each date is checked against the effective other one: a patch sets one date
+  // and leaves the stored value of the other in force.
+  assertDateOrder(
+    patch.startDate !== undefined ? patch.startDate : before.startDate,
+    patch.dueDate !== undefined ? patch.dueDate : before.dueDate,
+  );
   await assertAssignments(before.projectId, patch);
   await assertInitiative(before.projectId, patch.initiativeId);
   await assertCycle(before.projectId, patch.cycleId, before.cycleId);
@@ -1207,13 +1250,14 @@ export async function updateIssue(
     if (before.parentId !== after.parentId)
       await recordParentChange(id, before.parentId, after.parentId, actor);
     if (changed) {
-      await emitWebhookEvent(after.projectId, 'issue.updated', after);
+      await emitIssueEvent('issue.updated', after, actor);
       // Granular events fire in addition to issue.updated when their field changed.
       if (before.assigneeUserId !== after.assigneeUserId)
-        await emitWebhookEvent(after.projectId, 'issue.assigned', after);
+        await emitIssueEvent('issue.assigned', after, actor);
       if (before.delegateUserId !== after.delegateUserId) await enqueueDelegateRun(after, actor);
       if (before.columnId !== after.columnId) {
-        await emitWebhookEvent(after.projectId, 'issue.state_changed', after);
+        await emitIssueEvent('issue.state_changed', after, actor);
+        await queueStatusRuns([id], after.columnId, actorId(actor));
         await applySubtaskAutomation(after, actor);
       }
     }
@@ -1228,10 +1272,11 @@ export async function updateIssue(
 async function enqueueDelegateRun(after: IssueRow, actor?: ActivityActor): Promise<void> {
   const delegate = after.delegateUserId;
   if (!delegate || delegate === actorId(actor)) return;
-  const agent = await getAssignTriggerAgent(delegate, actorId(actor));
+  const agent = await getAssignTriggerAgent(after.projectId, delegate, actorId(actor));
   if (!agent) return;
   await enqueueAgentRun({
     agentId: agent.id,
+    projectId: after.projectId,
     issueId: after.id,
     sourceActivityId: null,
     prompt: `Work item ${after.identifier}: "${after.title}" has been delegated to you. Review it and take the appropriate next step.`,
@@ -1243,31 +1288,24 @@ async function enqueueDelegateRun(after: IssueRow, actor?: ActivityActor): Promi
 // attachments, and activity all go by their ON DELETE CASCADE on issue_id. Returns
 // the deleted attachment rows so the caller can remove their objects from the store.
 // Returns null if the issue did not exist.
-export async function deleteIssue(issueId: number): Promise<AttachmentRow[] | null> {
-  const result = await db.transaction(async (tx) => {
-    const rows = await tx
-      .select({ projectId: issue.projectId, seq: issue.sequenceNumber, key: projectTable.key })
-      .from(issue)
-      .innerJoin(projectTable, eq(projectTable.id, issue.projectId))
-      .where(eq(issue.id, issueId));
-    if (rows.length === 0) return null;
+export async function deleteIssue(
+  issueId: number,
+  actorUserId?: string | null,
+): Promise<AttachmentRow[] | null> {
+  // Read before the delete: the issue.deleted payload is the issue as it last read.
+  const deleted = await getIssue(issueId);
+  if (!deleted) return null;
+  const attachments = await db.transaction(async (tx) => {
     const attachmentRows = await tx
       .select()
       .from(issueAttachment)
       .where(eq(issueAttachment.issueId, issueId));
-    await tx.delete(issue).where(eq(issue.id, issueId));
-    return {
-      attachments: attachmentRows.map(mapAttachment),
-      projectId: rows[0].projectId,
-      identifier: `${rows[0].key}-${rows[0].seq}`,
-    };
+    const removed = await tx.delete(issue).where(eq(issue.id, issueId)).returning({ id: issue.id });
+    return removed.length ? attachmentRows.map(mapAttachment) : null;
   });
-  if (!result) return null;
-  await emitWebhookEvent(result.projectId, 'issue.deleted', {
-    id: issueId,
-    identifier: result.identifier,
-  });
-  return result.attachments;
+  if (!attachments) return null;
+  await emitIssueEvent('issue.deleted', deleted, actorUserId);
+  return attachments;
 }
 
 // Replaces the issue's full label set (not an add/remove diff) and logs the
@@ -1318,7 +1356,12 @@ export async function setIssueLabels(
 
   if (emitEvent && (added.length > 0 || removed.length > 0)) {
     const issueRow = await getIssue(issueId);
-    if (issueRow) await emitWebhookEvent(issueRow.projectId, 'issue.label_changed', issueRow);
+    if (issueRow) {
+      const named = (ids: number[]) => ids.map((id) => ({ id, name: names.get(id) ?? null }));
+      await emitIssueEvent('issue.label_changed', issueRow, actorUserId, {
+        labelChange: { added: named(added), removed: named(removed) },
+      });
+    }
   }
 }
 
@@ -1379,8 +1422,10 @@ export async function bulkUpdateIssues(
   const valid = await issuesInProject(projectId, ids);
   // The whole batch is checked against the limit before any of it is written:
   // per-issue checks inside the loop would move issues until the column filled up
-  // and then fail, leaving the move half-applied.
+  // and then fail, leaving the move half-applied. The column is checked first so
+  // the WIP message never names a column outside this project.
   if (patch.columnId !== undefined) {
+    await assertColumn(projectId, patch.columnId);
     const incoming = await countEnteringColumn(valid, patch.columnId);
     if (incoming > 0) await assertWipLimit(patch.columnId, incoming);
   }
@@ -1452,11 +1497,12 @@ export async function bulkArchiveIssues(
 export async function bulkDeleteIssues(
   projectId: number,
   ids: number[],
+  actorUserId: string | null,
 ): Promise<{ deleted: number; attachments: AttachmentRow[] }> {
   const valid = await issuesInProject(projectId, ids);
   const attachments: AttachmentRow[] = [];
   for (const id of valid) {
-    const rows = await deleteIssue(id);
+    const rows = await deleteIssue(id, actorUserId);
     if (rows) attachments.push(...rows);
   }
   return { deleted: valid.length, attachments };
@@ -1556,6 +1602,16 @@ function isHttpUrl(value: string): boolean {
   return url.protocol === 'http:' || url.protocol === 'https:';
 }
 
+// Checked here, not in the schema: one `value` carries every field type.
+function parseDate(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'string') {
+    const day = new Date(`${value}T00:00:00Z`);
+    if (!Number.isNaN(day.getTime()) && day.toISOString().slice(0, 10) === value) return value;
+  }
+  throw new HttpError(400, "Date must be a calendar day, 'YYYY-MM-DD'");
+}
+
 // A datetime value on the way in: an ISO datetime string, or null when unset.
 // Anything else (a number, a date-only string, unparseable text) is rejected: a
 // value without a time of day would land on midnight UTC, which is another day
@@ -1591,18 +1647,20 @@ async function assertFieldMember(
 // queue a run so it can act on the issue. Skipped when the agent set itself. The run
 // is executed later, so the write is never blocked on it.
 async function enqueueFieldRun(
+  projectId: number,
   issueId: number,
   field: CustomFieldRow,
   userId: string,
   actorUserId: string | null | undefined,
 ): Promise<void> {
   if (userId === actorUserId) return;
-  const agent = await getFieldTriggerAgent(userId, field.id, actorUserId ?? null);
+  const agent = await getFieldTriggerAgent(projectId, userId, field.id, actorUserId ?? null);
   if (!agent) return;
   const row = await getIssue(issueId);
   if (!row) return;
   await enqueueAgentRun({
     agentId: agent.id,
+    projectId,
     issueId,
     sourceActivityId: null,
     trigger: 'field',
@@ -1732,7 +1790,7 @@ export async function setIssueFieldValue(
         column = { valueBool: input.value == null ? null : Boolean(input.value) };
         break;
       case 'date':
-        column = { valueDate: (input.value as string) ?? null };
+        column = { valueDate: parseDate(input.value) };
         break;
       case 'member':
         column = { valueUserId: memberUserId };
@@ -1788,7 +1846,7 @@ export async function setIssueFieldValue(
   );
 
   if (memberUserId && memberUserId !== previousMemberUserId) {
-    await enqueueFieldRun(issueId, field, memberUserId, actorUserId);
+    await enqueueFieldRun(projectId, issueId, field, memberUserId, actorUserId);
     await notifyFieldMember(projectId, issueId, memberUserId, entry?.id ?? null, actorUserId);
   }
 

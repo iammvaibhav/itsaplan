@@ -1,7 +1,7 @@
 import { usePathname } from 'next/navigation';
-import { Shield, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { rolesPath, settingsPath } from '@/utils/paths';
+import { type LucideIcon } from 'lucide-react';
+import { settingsPath } from '@/utils/paths';
 import {
   AUTOMATION_SECTIONS,
   CONFIGURATION_SECTIONS,
@@ -10,7 +10,7 @@ import {
 } from '@/utils/settingsSections';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSettingsSectionText } from '@/hooks/useSectionLabels';
-import type { ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 
 // The project settings sidebar (the "Project settings" mode) lists the
 // Configuration sections flat under group labels. This hook builds those groups
@@ -44,12 +44,12 @@ export function useSettingsNavGroups(
   const t = useTranslations('nav');
   const sectionText = useSettingsSectionText();
   const pathname = usePathname();
-  const { can, isOwner } = usePermissions(project);
+  const { can } = usePermissions(project);
 
   // The readable sections of one group as nav items.
   const toItems = (sections: SettingsSection[]): SettingsNavItem[] =>
     sections
-      .filter((s) => can(s.resource, 'read'))
+      .filter((s) => can(s.resource, s.viewAction ?? 'read'))
       .map((s) => ({
         key: s.slug,
         href: projectKey ? settingsPath(projectKey, s.slug) : '#',
@@ -62,22 +62,8 @@ export function useSettingsNavGroups(
   const workflowItems = toItems(CONFIGURATION_SECTIONS);
   const automationItems = toItems(AUTOMATION_SECTIONS);
 
-  // Roles is owner-only and sits in the Project group; Members lives in the main
-  // sidebar, not here.
-  const rolesItems: SettingsNavItem[] = isOwner
-    ? [
-        {
-          key: 'roles',
-          href: projectKey ? rolesPath(projectKey) : '#',
-          icon: Shield,
-          label: t('roles'),
-          active: pathname.endsWith('/members/roles'),
-        },
-      ]
-    : [];
-
   const groups: SettingsNavGroup[] = [
-    { key: 'general', label: t('groups.project'), items: [...generalItems, ...rolesItems] },
+    { key: 'general', label: t('groups.project'), items: generalItems },
     { key: 'workflow', label: t('groups.workflow'), items: workflowItems },
     { key: 'automation', label: t('groups.automation'), items: automationItems },
   ].filter((g) => g.items.length > 0);

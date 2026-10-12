@@ -3,6 +3,7 @@ import { useTranslations } from 'next-intl';
 import { Bell, Settings, Users } from 'lucide-react';
 import { membersPath, notificationsPath } from '@/utils/paths';
 import { useSettingsNavGroups } from '@/hooks/useSettingsNavGroups';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -19,28 +20,31 @@ export default function SidebarConfigNav({ projectKey }: { projectKey: string | 
   const pathname = usePathname();
   const disabled = !projectKey;
   const { firstHref } = useSettingsNavGroups(projectKey);
-
-  const onRoles = pathname.endsWith('/members/roles');
+  const { can, isMember } = usePermissions();
 
   return (
     <SidebarGroup>
       <SidebarGroupLabel>{t('configuration')}</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
-          <SidebarNavItem
-            href={projectKey ? membersPath(projectKey) : '#'}
-            icon={Users}
-            label={t('members')}
-            active={pathname.includes('/members') && !onRoles}
-            disabled={disabled}
-          />
-          <SidebarNavItem
-            href={projectKey ? notificationsPath(projectKey) : '#'}
-            icon={Bell}
-            label={t('notifications')}
-            active={!!projectKey && pathname === notificationsPath(projectKey)}
-            disabled={disabled}
-          />
+          {can('members_manage', 'read') && (
+            <SidebarNavItem
+              href={projectKey ? membersPath(projectKey) : '#'}
+              icon={Users}
+              label={t('members')}
+              active={pathname.includes('/members')}
+              disabled={disabled}
+            />
+          )}
+          {isMember && (
+            <SidebarNavItem
+              href={projectKey ? notificationsPath(projectKey) : '#'}
+              icon={Bell}
+              label={t('notifications')}
+              active={!!projectKey && pathname === notificationsPath(projectKey)}
+              disabled={disabled}
+            />
+          )}
           {firstHref && (
             <SidebarNavItem
               href={firstHref}

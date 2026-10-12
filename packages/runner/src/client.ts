@@ -1,4 +1,4 @@
-import type { AgUiEvent } from './agui';
+import type { AgUiEvent, ContextUsage } from './agui';
 import type { RunnerConfig } from './config';
 
 // The agent's API key is the whole authorization: it identifies the agent, and the server
@@ -6,7 +6,7 @@ import type { RunnerConfig } from './config';
 
 export interface Run {
   id: number;
-  trigger: 'mention' | 'delegation' | 'field' | 'schedule' | 'manual';
+  trigger: 'mention' | 'delegation' | 'field' | 'schedule' | 'manual' | 'status' | 'event';
   prompt: string;
   systemPrompt: string;
   issueId: number | null;
@@ -79,9 +79,16 @@ export class Client {
     await this.post(`/agent-runs/${runId}/heartbeat`);
   }
 
+  // `usage` is what the last model call of the run read and wrote. Left out where the
+  // command reported nothing about it, which stores the run without counts.
   async report(
     runId: number,
-    result: { status: 'success' | 'failed'; output?: string; error?: string },
+    result: {
+      status: 'success' | 'failed';
+      output?: string;
+      error?: string;
+      usage?: ContextUsage | null;
+    },
   ): Promise<void> {
     await this.post(`/agent-runs/${runId}/result`, result);
   }
@@ -109,9 +116,11 @@ export class Client {
     return canceled(await this.post(`/agent-chats/${messageId}/heartbeat`));
   }
 
+  // `usage` is the size of the context the answer left behind. Left out where the
+  // command reported nothing about it, which keeps the number the thread already has.
   async chatResult(
     messageId: number,
-    result: { status: 'success' | 'failed'; error?: string },
+    result: { status: 'success' | 'failed'; error?: string; usage?: ContextUsage | null },
   ): Promise<void> {
     await this.post(`/agent-chats/${messageId}/result`, result);
   }

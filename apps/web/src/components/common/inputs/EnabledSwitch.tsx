@@ -4,11 +4,11 @@ import { useTranslations } from 'next-intl';
 export default function EnabledSwitch({
   checked,
   onChange,
-  disabled,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
-  disabled: boolean;
+  disabled?: boolean;
 }) {
   const t = useTranslations('common');
   return (

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,12 +10,11 @@ import {
   FieldDescription,
   FieldError,
   FieldGroup,
-  FieldLabel,
   FieldSeparator,
 } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import AuthFormHeader from '../AuthFormHeader';
 import AuthLoginAlternatives from './AuthLoginAlternatives';
+import AuthLoginPasswordFields from './AuthLoginPasswordFields';
 import AuthMessagePanel from '../AuthMessagePanel';
 import AuthUnconfirmedNotice from './AuthUnconfirmedNotice';
 import {
@@ -25,6 +24,7 @@ import {
   sendMagicLink,
   signInWithPassword,
   signInWithGoogle,
+  signInWithOidc,
   signInWithPasskey,
 } from '../../services/auth.service';
 import { useAuthAction } from '../../hooks/useAuthAction';
@@ -53,9 +53,12 @@ export default function AuthLoginForm() {
   const [unconfirmed, setUnconfirmed] = useState(false);
   const { error, pending, setError, run } = useAuthAction();
   const authConfig = useAuthConfig();
+  // An instance that runs entirely off its identity provider offers no form at all,
+  // only the buttons below it.
+  const passwordEnabled = authConfig?.emailPassword !== false;
   const params = useSearchParams();
   const justReset = params.get('reset') === '1';
-  // `apiFailure` in lib/api.ts sends the browser here with ?expired=1 after the API
+  // `apiFailure` in lib/api/core/client.ts sends the browser here with ?expired=1 after the API
   // refused the session, so the screen can say why the user is back on it.
   const sessionExpired = params.get('expired') === '1';
   // A Google sign-in or a confirmation link that could not complete comes back here
@@ -66,6 +69,12 @@ export default function AuthLoginForm() {
   // The confirmation link carries ?verified=1 and adds ?error=… when it failed, so
   // the success line only stands while there is no error next to it.
   const justVerified = params.get('verified') === '1' && !redirectError;
+
+  const router = useRouter();
+  // A fresh instance has nobody to sign in: the first account is created on sign-up.
+  useEffect(() => {
+    if (authConfig?.hasUsers === false) router.replace('/register');
+  }, [authConfig?.hasUsers, router]);
 
   function switchTo(next: Method) {
     setMethod(next);
@@ -124,6 +133,7 @@ export default function AuthLoginForm() {
     if (sessionExpired) return t('login.subtitleExpired');
     if (justVerified) return t('login.subtitleVerified');
     if (justReset) return t('login.subtitleReset');
+    if (!passwordEnabled) return t('login.subtitleSso');
     if (signingInWithLink) return t('login.subtitleLink');
     return t('login.subtitlePassword');
   }
@@ -138,46 +148,15 @@ export default function AuthLoginForm() {
       <FieldGroup>
         <AuthFormHeader title={t('login.title')} description={subtitle()} />
 
-        <Field>
-          <FieldLabel htmlFor="identifier">
-            {signingInWithLink ? t('fields.email') : t('fields.identifier')}
-          </FieldLabel>
-          <Input
-            id="identifier"
-            type={signingInWithLink ? 'email' : 'text'}
-            placeholder={t('fields.emailPlaceholder')}
-            autoComplete="username"
-            required
-            value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
-            disabled={pending}
+        {passwordEnabled && (
+          <AuthLoginPasswordFields
+            signingInWithLink={signingInWithLink}
+            identifier={identifier}
+            password={password}
+            pending={pending}
+            onIdentifierChange={setIdentifier}
+            onPasswordChange={setPassword}
           />
-        </Field>
-
-        {!signingInWithLink && (
-          <Field>
-            <div className="flex items-center justify-between">
-              <FieldLabel htmlFor="password">{t('fields.password')}</FieldLabel>
-              {authConfig?.emailEnabled && (
-                <Link
-                  href="/forgot-password"
-                  className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                >
-                  {t('login.forgotPassword')}
-                </Link>
-              )}
-            </div>
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={pending}
-            />
-          </Field>
         )}
 
         {(error || redirectError) && <FieldError>{error ?? redirectError}</FieldError>}
@@ -199,25 +178,31 @@ export default function AuthLoginForm() {
           />
         )}
 
-        <Field>
-          <Button type="submit" disabled={pending}>
-            {submitLabel()}
-          </Button>
-        </Field>
+        {passwordEnabled && (
+          <>
+            <Field>
+              <Button type="submit" disabled={pending}>
+                {submitLabel()}
+              </Button>
+            </Field>
 
-        <FieldSeparator>{t('login.or')}</FieldSeparator>
+            <FieldSeparator>{t('login.or')}</FieldSeparator>
+          </>
+        )}
 
         <AuthLoginAlternatives
           signingInWithLink={signingInWithLink}
           pending={pending}
           onToggleMethod={() => switchTo(signingInWithLink ? 'password' : 'link')}
+          onOidc={() => run(signInWithOidc, { redirect: false })}
           onGoogle={() => run(signInWithGoogle, { redirect: false })}
           onPasskey={() => run(signInWithPasskey, { fallback: t('errors.passkey') })}
         />
 
-        {/* Only when anyone can register. An invite-only instance hands out links
-            directly, and a closed one has nowhere to send the visitor. */}
-        {authConfig?.registration === 'open' && (
+        {/* Only when anyone can register with a password. An invite-only instance
+            hands out links directly, a closed one has nowhere to send the visitor,
+            and with single sign-on the identity provider makes the account. */}
+        {authConfig?.registration === 'open' && passwordEnabled && (
           <FieldDescription className="text-center">
             {t('login.noAccount')}{' '}
             <Link href="/register" className="underline underline-offset-4">

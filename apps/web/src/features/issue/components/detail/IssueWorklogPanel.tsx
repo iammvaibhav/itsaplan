@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { type IssueDetail, type ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { IssueDetail } from '@/lib/api/endpoints/issues';
 import { useSession } from '@/lib/auth-client';
 import { usePermissions } from '@/hooks/usePermissions';
 import { formatMinutes } from '@/utils/estimate';
 import { Button } from '@/components/ui/button';
-import { usePersistedOpen } from '../../hooks/usePersistedOpen';
+import { usePersistedOpen } from '@/hooks/usePersistedOpen';
 import {
   useCreateWorklog,
   useDeleteWorklog,
@@ -40,7 +41,7 @@ export default function IssueWorklogPanel({
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  const projectKey = project.project.key;
+  const projectKey = project.project.ref;
   const entries = useWorklogsQuery(issue.id).data ?? [];
   const createWorklog = useCreateWorklog();
   const updateWorklog = useUpdateWorklog();

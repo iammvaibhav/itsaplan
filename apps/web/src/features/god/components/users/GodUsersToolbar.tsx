@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import type { InstanceUserKind } from '@/lib/api';
+import type { InstanceUserKind } from '@/lib/api/endpoints/god';
 import {
   Select,
   SelectContent,
@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import GodSearchInput from '../GodSearchInput';
+import SearchInput from '@/components/common/SearchInput';
 
 // Search and the kind filter above the directory. Both drive server-side queries,
 // so a change here refetches a page rather than filtering what is on screen.
@@ -28,7 +28,7 @@ export default function GodUsersToolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <GodSearchInput
+      <SearchInput
         value={search}
         onChange={onSearchChange}
         placeholder={t('searchPlaceholder')}

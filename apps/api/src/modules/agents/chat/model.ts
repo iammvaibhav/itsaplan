@@ -1,6 +1,8 @@
 import { t } from 'elysia';
 
-export { agentParams } from '../model';
+import { contextUsageBody } from '../model';
+
+export { projectAgentParams } from '../model';
 
 // A chat with an external agent is carried by AG-UI events (https://docs.ag-ui.com):
 // the runner reports what its coding agent produces as this event stream, and the
@@ -172,9 +174,12 @@ export const chatEventsBody = t.Object({
   ),
 });
 
+// `usage` is the size of the context this answer left behind. A null one is shown as a
+// dash in the chat.
 export const chatResultBody = t.Object({
   status: t.Union([t.Literal('success'), t.Literal('failed')]),
   error: t.Optional(t.Nullable(t.String())),
+  usage: contextUsageBody,
 });
 
 // The answer of every runner call that reports progress. `canceled` is how the stop

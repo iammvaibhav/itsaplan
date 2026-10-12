@@ -1,16 +1,29 @@
 import { t } from 'elysia';
+import { PROJECT_KEY_PATTERN } from './key';
+import { PROJECT_FEATURES } from '#shared/features';
 import { ColumnResponse } from '#modules/columns/model';
 import { CustomFieldResponse } from '#modules/custom-fields/model';
+import { IssueTemplateResponse } from '#modules/issue-templates/model';
 import { IssueTypeResponse } from '#modules/issue-types/model';
 import { LabelGroupResponse, LabelResponse } from '#modules/labels/model';
 import { PermissionMatrixSchema } from '#shared/permissions';
+import { AccessViaSchema } from '#shared/workspace-roles';
 import { ISSUE_TYPE_PRESET_KEYS } from './service';
 import { COPY_INCLUDE_KEYS } from './copy';
 
+// The description goes into the system prompt of every agent run, where it costs
+// input tokens each time, so it is capped on the way in and cut again in the prompt.
+export const PROJECT_DESCRIPTION_LIMIT = 2000;
+
+const projectKey = t.String({
+  pattern: PROJECT_KEY_PATTERN,
+  description: 'Upper-case letters and digits, starting with a letter, up to 10 characters.',
+});
+
 const projectBody = t.Object({
-  key: t.String({ minLength: 1 }),
+  key: projectKey,
   name: t.String({ minLength: 1 }),
-  description: t.Optional(t.String()),
+  description: t.Optional(t.String({ maxLength: PROJECT_DESCRIPTION_LIMIT })),
 });
 
 // Create adds the issue-type preset: which set of types the new project starts with.
@@ -30,7 +43,7 @@ export const createProjectBody = t.Composite([
 
 // Copy adds an optional selection of which parts of the source project to carry over.
 // Omitted → the source project's structure (states, types, labels, custom fields,
-// views, dashboards, actions). Each flag maps to a section of the project settings
+// views, dashboards, documents, actions). Each flag maps to a project section
 // menu; the service force-enables dependencies.
 export const copyProjectBody = t.Composite([
   projectBody,
@@ -42,11 +55,44 @@ export const copyProjectBody = t.Composite([
 ]);
 
 export const updateProjectBody = t.Object({
+  key: t.Optional(projectKey),
   name: t.Optional(t.String({ minLength: 1 })),
-  description: t.Optional(t.String()),
+  description: t.Optional(t.String({ maxLength: PROJECT_DESCRIPTION_LIMIT })),
 });
 
+export const ProjectPreferencesResponse = t.Object({
+  isFavorite: t.Boolean(),
+  isHidden: t.Boolean(),
+});
+
+export const updateProjectPreferencesBody = t.Object(
+  {
+    isFavorite: t.Optional(t.Boolean()),
+    isHidden: t.Optional(t.Boolean()),
+  },
+  { minProperties: 1 },
+);
+
 export const listProjectsQuery = t.Object({
+  q: t.Optional(
+    t.String({
+      description: 'Case-insensitive literal substring of the project key, name, or description.',
+    }),
+  ),
+  sort: t.Optional(
+    t.UnionEnum(['key', 'name', 'created', 'activity'], {
+      description:
+        'Sort by key (default), name, newest creation, or newest work-item activity/comment. ' +
+        'Activity puts projects without activity last. Ties are ordered by key.',
+    }),
+  ),
+  teamId: t.Optional(
+    t.Numeric({
+      minimum: 1,
+      multipleOf: 1,
+      description: 'Limit results to projects in this team that you belong to.',
+    }),
+  ),
   permissions: t.Optional(
     t.String({ description: "'true' to include the caller's permission matrix per project." }),
   ),
@@ -55,14 +101,22 @@ export const listProjectsQuery = t.Object({
 // A project DTO (ProjectRow from the service).
 export const ProjectResponse = t.Object({
   id: t.Number(),
+  teamId: t.Number(),
+  teamName: t.String(),
+  teamRef: t.String({ description: "The team's slug, or its id while it has none." }),
   key: t.String(),
+  ref: t.String({
+    description: "'<teamRef>.<key>': how routes containing {projectKey} name this project.",
+  }),
   name: t.String(),
   description: t.String(),
   mcpEnabled: t.Boolean(),
+  teamMcpEnabled: t.Boolean(),
   // The optional sections, toggled in Settings -> General. All on by default; a
   // disabled section is hidden in the web app and its rows are kept.
   initiativesEnabled: t.Boolean(),
   dashboardsEnabled: t.Boolean(),
+  documentsEnabled: t.Boolean(),
   notesEnabled: t.Boolean(),
   cyclesEnabled: t.Boolean(),
   subtasksEnabled: t.Boolean(),
@@ -71,6 +125,10 @@ export const ProjectResponse = t.Object({
   pointsEstimateEnabled: t.Boolean(),
   timeEstimateEnabled: t.Boolean(),
   timeLoggingEnabled: t.Boolean(),
+  availableFeatures: t.Array(t.UnionEnum([...PROJECT_FEATURES])),
+  archivedAt: t.Nullable(
+    t.String({ description: 'When the project was archived, or null while it is active.' }),
+  ),
   createdAt: t.String(),
 });
 
@@ -82,6 +140,16 @@ export const ProjectListResponse = t.Array(
     ProjectResponse,
     t.Object({
       role: t.Union([t.Literal('owner'), t.Literal('member')]),
+      via: AccessViaSchema,
+      lastActivityAt: t.Nullable(
+        t.String({
+          description: 'Newest readable work-item activity or comment timestamp, or null.',
+        }),
+      ),
+      isFavorite: t.Boolean({ description: 'Whether you starred this project.' }),
+      isHidden: t.Boolean({
+        description: 'Whether you hid this project in your navigation. Does not restrict access.',
+      }),
       permissions: t.Optional(PermissionMatrixSchema),
     }),
   ]),
@@ -98,17 +166,29 @@ const AssigneeCandidateResponse = t.Object({
   kind: t.Union([t.Literal('member'), t.Literal('agent')]),
   agentKind: t.Nullable(t.Union([t.Literal('external'), t.Literal('internal')])),
   restrictedToUserId: t.Nullable(t.String()),
+  respondsToMention: t.Nullable(t.Boolean()),
+  canReadWorkItems: t.Boolean(),
 });
 
 // The caller's own role in a project (from MemberContext in members/service). The
 // resolved permission matrix is a sibling `permissions` key on the board payload.
 const ViewerResponse = t.Object({
   role: t.Union([t.Literal('owner'), t.Literal('member')]),
+  // The caller's standing in the team that owns the project, null when they are not
+  // a member of it. An owner or manager of the team governs the project's settings
+  // alongside the project's own owner; 'agent' is a bot user reading its own board,
+  // which governs nothing.
+  teamRole: t.Nullable(
+    t.Union([t.Literal('owner'), t.Literal('manager'), t.Literal('member'), t.Literal('agent')]),
+  ),
+  // 'workspace' when the caller is not a member of the project and reaches it through
+  // their role in the workspace that holds it.
+  via: AccessViaSchema,
 });
 
 // The project board scaffold (GET /projects/:projectKey): the project plus its
-// columns, issue types, labels, label groups, assignable users, custom fields, and
-// the caller's own effective access. The issues themselves come from
+// columns, issue types, labels, label groups, assignable users, custom fields,
+// issue templates, and the caller's own effective access. The issues themselves come from
 // GET /projects/:projectKey/issues/board.
 export const ProjectBoardResponse = t.Object({
   project: ProjectResponse,
@@ -118,6 +198,7 @@ export const ProjectBoardResponse = t.Object({
   labelGroups: t.Array(LabelGroupResponse),
   assignees: t.Array(AssigneeCandidateResponse),
   customFields: t.Array(CustomFieldResponse),
+  issueTemplates: t.Array(IssueTemplateResponse),
   viewer: ViewerResponse,
   // The caller's resolved permission matrix (owners get every flag).
   permissions: PermissionMatrixSchema,
@@ -127,6 +208,7 @@ export const ProjectBoardResponse = t.Object({
 const FeaturesResponse = t.Object({
   initiatives: t.Boolean(),
   dashboards: t.Boolean(),
+  documents: t.Boolean(),
   notes: t.Boolean(),
   cycles: t.Boolean(),
   subtasks: t.Boolean(),
@@ -134,16 +216,20 @@ const FeaturesResponse = t.Object({
   issueStats: t.Boolean(),
 });
 
-// The project's settings: MCP reachability and the enabled sections.
+// The project's settings: MCP reachability and the enabled sections. Reachability is
+// read-only here — both flags behind it are set from the team's MCP settings.
 export const ProjectSettingsResponse = t.Object({
-  mcpEnabled: t.Boolean(),
+  mcpEnabled: t.Boolean({ description: "Whether the team's MCP reach covers this project." }),
+  teamMcpEnabled: t.Boolean({ description: 'Whether the team is reachable over MCP at all.' }),
   features: FeaturesResponse,
 });
 
 export const updateProjectSettingsBody = t.Object({
-  mcpEnabled: t.Optional(t.Boolean()),
   features: t.Optional(t.Partial(FeaturesResponse)),
 });
+
+// Ten years, well inside the range make_interval and a timestamp can hold.
+export const MAX_AUTO_ARCHIVE_DAYS = 3650;
 
 // Auto-archive thresholds (AutoArchiveSettings from the service): days of inactivity
 // in a completed/canceled column before the worker archives an issue; null = off.
@@ -152,9 +238,12 @@ export const AutoArchiveResponse = t.Object({
   canceledDays: t.Nullable(t.Number()),
 });
 
+// The upper bound keeps the value inside what an interval can carry: the worker
+// subtracts it from now() for every project in one statement, so a day count large
+// enough to overflow a timestamp fails that statement for the whole instance.
 export const updateAutoArchiveBody = t.Object({
-  completedDays: t.Nullable(t.Integer({ minimum: 1 })),
-  canceledDays: t.Nullable(t.Integer({ minimum: 1 })),
+  completedDays: t.Nullable(t.Integer({ minimum: 1, maximum: MAX_AUTO_ARCHIVE_DAYS })),
+  canceledDays: t.Nullable(t.Integer({ minimum: 1, maximum: MAX_AUTO_ARCHIVE_DAYS })),
 });
 
 // The estimate kinds the project's issues carry and whether its members log time

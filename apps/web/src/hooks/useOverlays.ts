@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import type { NewIssueDefaults } from '@/utils/project';
 
-// The project-level overlays: the new-project modal, the command palette, the
-// new-issue modal and the issue detail panel. Grouped here so the Shell tracks
-// one object instead of four flags, and so the keyboard shortcut layer can ask
-// whether any overlay is open through `anyOpen`. Project settings are their own
-// pages, not an overlay.
+// The project-level overlays, grouped here so the Shell tracks one object instead of
+// a flag each, and so the keyboard shortcut layer can ask whether any of them is open
+// through `anyOpen`. Project settings are their own pages, not an overlay.
 export function useOverlays() {
   const [showNewProject, setShowNewProject] = useState(false);
+  const [showNewInitiative, setShowNewInitiative] = useState(false);
   const [showCommand, setShowCommand] = useState(false);
   // Initial field values for a new issue (null = the new-issue modal is closed).
   const [newIssueDefaults, setNewIssueDefaults] = useState<NewIssueDefaults | null>(null);
@@ -22,11 +21,18 @@ export function useOverlays() {
     setOpenIssueId(null);
   }, [pathname]);
 
-  const anyOpen = showNewProject || showCommand || newIssueDefaults != null || openIssueId != null;
+  const anyOpen =
+    showNewProject ||
+    showNewInitiative ||
+    showCommand ||
+    newIssueDefaults != null ||
+    openIssueId != null;
 
   return {
     showNewProject,
     setShowNewProject,
+    showNewInitiative,
+    setShowNewInitiative,
     showCommand,
     setShowCommand,
     newIssueDefaults,

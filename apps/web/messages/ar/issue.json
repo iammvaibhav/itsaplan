@@ -5,6 +5,9 @@
   "openAsPage": "فتح كصفحة",
   "titlePlaceholder": "عنوان المهمة",
   "noActivity": "لا يوجد نشاط بعد.",
+  "noComments": "لا توجد تعليقات بعد.",
+  "noHistory": "لا توجد تغييرات بعد.",
+  "noWorklog": "لم يُسجَّل وقت بعد.",
   "noActivityInStretch": "لا يوجد نشاط في هذه الفترة.",
   "activityLoadFailed": "تعذّر تحميل النشاط.",
   "fields": {
@@ -47,6 +50,12 @@
     "dueDate": "تاريخ الاستحقاق",
     "clearDueDate": "مسح تاريخ الاستحقاق",
     "labels": "الوسوم",
+    "copyId": "نسخ المعرّف",
+    "copyShortLink": "نسخ الرابط المختصر",
+    "copyFullUrl": "نسخ الرابط الكامل",
+    "copyTitle": "نسخ العنوان",
+    "copyDescription": "نسخ الوصف",
+    "copyBranch": "نسخ اسم الفرع",
     "copyPrompt": "نسخ التوجيه",
     "restore": "استعادة",
     "archive": "أرشفة",
@@ -54,6 +63,7 @@
     "noDelegate": "بلا مفوَّض",
     "noInitiative": "بلا مبادرة",
     "noCycle": "بلا دورة",
+    "copyFailed": "تعذّر النسخ إلى الحافظة",
     "promptCopied": "تم نسخ التوجيه إلى الحافظة"
   },
   "commands": {
@@ -88,7 +98,9 @@
   },
   "actionsBar": {
     "shortLinkCopied": "تم نسخ الرابط المختصر",
+    "branchCopied": "تم نسخ اسم الفرع",
     "copyShortLink": "نسخ الرابط المختصر",
+    "copyBranch": "نسخ اسم الفرع",
     "copied": "تم النسخ!",
     "copyPrompt": "نسخ التوجيه",
     "sharedPublicly": "مُشارَكة علنًا",
@@ -96,7 +108,8 @@
     "restore": "استعادة المهمة",
     "archive": "أرشفة المهمة",
     "delete": "حذف المهمة",
-    "shareIssue": "مشاركة المهمة"
+    "shareIssue": "مشاركة المهمة",
+    "move": "نقل إلى مشروع آخر"
   },
   "actions": {
     "deleteTitle": "حذف المهمة",
@@ -105,7 +118,16 @@
     "cannotBeUndone": "لا يمكن التراجع عن هذا.",
     "deleteDescription": "تحذف {issue}؟ ده هيشيل المهمة وتعليقاتها ونشاطها ومرفقاتها.",
     "archiveDescription": "تأرشف {issue}؟ هتخرج من اللوحة وتقدر ترجّعها بعدين.",
-    "applyDescription": "تطبّق <v>{action}</v> على المهمة دي؟"
+    "applyDescription": "تطبّق <v>{action}</v> على المهمة دي؟",
+    "moveTitle": "نقل المهمة",
+    "move": "نقل",
+    "moveDescription": "انقل {issue} إلى مشروع آخر في هذا الفريق. ستحصل على رقم جديد هناك، ويظل الرابط القديم يفتحها.",
+    "moveSubtasks": "{count, plural, one {تنتقل مهمتها الفرعية معها.} two {تنتقل مهمتاها الفرعيتان معها.} few {تنتقل مهامها الفرعية الـ # معها.} many {تنتقل مهامها الفرعية الـ # معها.} other {تنتقل مهامها الفرعية الـ # معها.}}",
+    "moveProject": "المشروع",
+    "moveChooseProject": "اختر مشروعًا",
+    "moveColumn": "الحالة",
+    "moveColumnMatching": "الحالة المطابقة",
+    "moveCarriedOver": "يُحتفظ بالنوع والتسميات والحقول المخصصة إذا كان في المشروع الهدف ما يحمل الاسم نفسه. تُزال الدورة والمبادرة والروابط إلى مهام هذا المشروع."
   },
   "create": {
     "title": "مهمة جديدة",
@@ -114,7 +136,10 @@
     "noFields": "لا توجد حقول.",
     "description": "الوصف",
     "other": "أخرى",
-    "submit": "إنشاء مهمة"
+    "submit": "إنشاء مهمة",
+    "template": "قالب",
+    "applyTemplate": "تطبيق قالب…",
+    "noTemplates": "لا توجد قوالب."
   },
   "attachments": {
     "title": "المرفقات",
@@ -135,6 +160,8 @@
     "download": "تنزيل",
     "downloadFile": "تنزيل {name}",
     "deleteFile": "حذف {name}",
+    "deleteTitle": "حذف المرفق",
+    "deleteConfirmation": "حذف {name}؟ سيُزال أيضًا من الوصف في كل موضع مضمَّن فيه. لا يمكن التراجع عن ذلك.",
     "preview": "معاينة {name}",
     "remove": "إزالة {name}",
     "removeShort": "إزالة",
@@ -191,7 +218,11 @@
     "detachFromParent": "الفصل عن {parent}",
     "subtaskOf": "مهمة فرعية من {issue}",
     "existingIssue": "مهمة موجودة",
-    "searchPrompt": "ابحث عن مهام لإضافتها كمهمة فرعية…"
+    "searchPrompt": "ابحث عن مهام لإضافتها كمهمة فرعية…",
+    "filter": "التصفية حسب الحالة",
+    "hiding": "مخفية: {states}",
+    "clearFilter": "مسح التصفية",
+    "allHidden": "كل المهام الفرعية مخفية بالتصفية."
   },
   "subtaskDisposal": {
     "intro": "{issues, plural, zero {لا مهام} one {هذه المهمة لديها} two {هاتان المهمتان لديهما} few {هذه المهام لديها} many {هذه المهام لديها} other {هذه المهام لديها}} {count, plural, zero {لا مهام فرعية} one {مهمة فرعية واحدة} two {مهمتان فرعيتان} few {# مهام فرعية} many {# مهمة فرعية} other {# مهمة فرعية}}.",
@@ -215,7 +246,12 @@
     "cancel": "إلغاء",
     "toSend": "للإرسال",
     "unknownAuthor": "غير معروف",
-    "goToLastComment": "الانتقال إلى آخر تعليق"
+    "goToLastComment": "الانتقال إلى آخر تعليق",
+    "edit": "تعديل",
+    "edited": "تم التعديل",
+    "deleteComment": "حذف التعليق",
+    "deleteCommentTitle": "حذف هذا التعليق؟",
+    "deleteCommentConfirmation": "سيتم حذف التعليق وجميع ردوده نهائيًا."
   },
   "stats": {
     "title": "الإحصاءات",
@@ -234,11 +270,7 @@
     "endTime": "وقت الانتهاء"
   },
   "editor": {
-    "insertImage": "إدراج صورة",
-    "insertNamed": "إدراج {name}",
-    "descriptionPlaceholder": "إضافة وصف…",
-    "noImages": "مفيش صور مرفقة لسه. ارفع صورة من لوحة المرفقات، أو ارميها على المحرر على طول.",
-    "image": "صورة"
+    "descriptionPlaceholder": "إضافة وصف…"
   },
   "cycleSelect": {
     "label": "الدورة",
@@ -317,17 +349,96 @@
     "pullRequestOpened": "فتح طلب السحب <v>{pr}</v>",
     "worklogAdded": "سجّل <v>{time}</v> ليوم <v>{date}</v>",
     "worklogChanged": "غيّر التسجيل من <v>{from}</v> ليوم <v>{fromDate}</v> إلى <v>{to}</v> ليوم <v>{date}</v>",
-    "worklogRemoved": "حذف تسجيل <v>{time}</v> ليوم <v>{date}</v>"
+    "worklogRemoved": "حذف تسجيل <v>{time}</v> ليوم <v>{date}</v>",
+    "commentEdited": "عدّل تعليقًا",
+    "commentDeleted": "حذف تعليقًا",
+    "issueMoved": "نقل هذه المهمة من <v>{from}</v> إلى <v>{to}</v>"
+  },
+  "development": {
+    "title": "التطوير",
+    "unlink": "إلغاء ربط عنصر التطوير",
+    "branch": "فرع",
+    "add": "إضافة",
+    "empty": "اربط طلب سحب موجودًا أو أنشئ طلبًا من فرع",
+    "linkExisting": "ربط طلب موجود",
+    "linkExistingDescription": "اختر طلب سحب أو دمج من مستودع متصل.",
+    "createPullRequest": "إنشاء طلب سحب",
+    "createPullRequestDescription": "أنشئ طلب سحب من فرع موجود واربطه بهذه المهمة.",
+    "noConnectedRepositories": "اربط مستودع GitHub أو GitLab من إعدادات المشروع أولًا.",
+    "loadingRepositories": "جارٍ تحميل المستودعات…",
+    "chooseRepository": "اختر المستودع",
+    "openOnly": "المفتوحة",
+    "allPullRequests": "الكل",
+    "searchPullRequests": "ابحث بالعنوان أو الفرع أو الرقم…",
+    "loadingPullRequests": "جارٍ تحميل طلبات السحب…",
+    "noPullRequests": "لم يتم العثور على طلبات سحب.",
+    "alreadyLinked": "مرتبط",
+    "loadMore": "تحميل المزيد",
+    "cancel": "إلغاء",
+    "linking": "جارٍ الربط…",
+    "linkPullRequest": "ربط طلب السحب",
+    "linkedSuccess": "تم ربط طلب السحب",
+    "linkFailed": "تعذر ربط طلب السحب",
+    "repository": "المستودع",
+    "sourceBranch": "فرع المصدر",
+    "targetBranch": "الفرع الهدف",
+    "chooseBranch": "اختر الفرع",
+    "loadingBranches": "جارٍ تحميل الفروع…",
+    "loadMoreBranches": "تحميل المزيد من الفروع",
+    "pullRequestTitle": "العنوان",
+    "description": "الوصف",
+    "descriptionPlaceholder": "أضف سياقًا للمراجعين…",
+    "mergeBehavior": "رابط المهمة",
+    "closeOnMerge": "إغلاق عند الدمج",
+    "referenceOnly": "مرجع فقط",
+    "createAsDraft": "إنشاء كمسودة",
+    "branchesMustDiffer": "يجب أن يختلف فرع المصدر عن الفرع الهدف.",
+    "creating": "جارٍ الإنشاء…",
+    "createdSuccess": "تم إنشاء طلب السحب وربطه",
+    "createFailed": "تعذر إنشاء طلب السحب",
+    "draft": "مسودة",
+    "ready": "جاهز للدمج",
+    "open": "مفتوح",
+    "merged": "مدموج",
+    "closed": "مغلق",
+    "updated": "تم التحديث {date}",
+    "openPipeline": "فتح خط الأنابيب",
+    "checks": "{count, plural, one {فحص واحد} two {فحصان} few {# فحوصات} many {# فحصًا} other {# فحص}}",
+    "pipeline": {
+      "pending": "قيد الانتظار",
+      "running": "قيد التشغيل",
+      "success": "ناجح",
+      "failed": "فشل",
+      "canceled": "ملغي",
+      "skipped": "تم تخطيه"
+    }
+  },
+  "documents": {
+    "title": "المستندات",
+    "add": "ربط مستند",
+    "empty": "لا توجد مستندات مرتبطة بعد.",
+    "loadFailed": "تعذر تحميل الصفحات المرتبطة. انقر لإعادة المحاولة.",
+    "remove": "إلغاء ربط {title}",
+    "untitled": "بلا عنوان"
   },
   "archived": "مؤرشفة",
   "activityHeading": "النشاط",
-  "feedFlat": "مسطّح",
-  "feedGrouped": "مجمّع",
+  "feedTabAll": "الكل",
+  "feedTabComments": "التعليقات",
+  "feedTabHistory": "السجل",
+  "feedTabWorklog": "سجل الوقت",
+  "feedStatus": "الحالات",
+  "feedGroupByStatus": "التجميع حسب الحالة",
+  "feedNewest": "الأحدث أولاً",
+  "feedOldest": "الأقدم أولاً",
+  "feedChangeOrder": "تغيير الترتيب",
+  "feedRunToggle": "عرض التغييرات المشابهة",
   "shareUnavailable": "المهمة المشاركة دي مش متاحة. يمكن الرابط اتلغى.",
   "fieldSelects": {
     "changeState": "تغيير الحالة…",
     "changeType": "تغيير النوع…",
     "noType": "بلا نوع",
+    "unsetState": "بدون حالة",
     "noAssignee": "بلا مسؤول",
     "assignTo": "الإسناد إلى…",
     "you": "أنت",
@@ -350,7 +461,14 @@
   },
   "watchers": {
     "watch": "متابعة",
-    "unwatch": "إلغاء المتابعة"
+    "unwatch": "إلغاء المتابعة",
+    "manage": "إدارة المتابعين",
+    "search": "البحث عن أعضاء المشروع…",
+    "empty": "لم يتم العثور على أعضاء.",
+    "you": "{name} (أنت)",
+    "add": "إضافة {name} كمتابع",
+    "remove": "إزالة {name} من المتابعين",
+    "watchingCount": "{count} متابع"
   },
   "effects": {
     "cleared": "تم المسح",

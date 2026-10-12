@@ -4,9 +4,10 @@ import { closestCenter, DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { horizontalListSortingStrategy, SortableContext } from '@dnd-kit/sortable';
 import { Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useStripSortSensors } from '@/lib/dnd';
+import { useDndSensors } from '@/lib/dnd';
 import { Button } from '@/components/ui/button';
 import { ChatPanelTab } from './ChatPanelTab';
+import { ChatPanelTabFavorite } from './ChatPanelTabFavorite';
 import { ChatPanelTabSortable } from './ChatPanelTabSortable';
 import { ChatPanelTabsOverflow } from './ChatPanelTabsOverflow';
 import { useTabOverflow } from '../../hooks/useTabOverflow';
@@ -34,9 +35,10 @@ export function ChatPanelTabs({
   onSwapTabs: (id: string, otherId: string) => void;
 }) {
   const t = useTranslations('aiChat');
-  const sensors = useStripSortSensors();
+  const sensors = useDndSensors();
   const { rowRef, measureRef, visible, hidden } = useTabOverflow(sessions, activeId);
   const lastVisibleId = visible[visible.length - 1]?.id ?? null;
+  const active = sessions.find((session) => session.id === activeId);
 
   // Selecting from the menu shows that chat in the last slot of the row; the swap is
   // what keeps it there afterwards.
@@ -80,6 +82,16 @@ export function ChatPanelTabs({
           activeId={activeId}
           onSelect={selectHidden}
           onClose={onClose}
+        />
+      )}
+
+      {/* A chat that has not started has no thread, and neither has one with an agent
+          that keeps no memory, so there is nothing to star for either. */}
+      {active?.threadId && (
+        <ChatPanelTabFavorite
+          projectKey={projectKey}
+          agentId={active.agentId}
+          threadId={active.threadId}
         />
       )}
 

@@ -1,5 +1,6 @@
 import { useDraggable } from '@dnd-kit/core';
-import { type ProjectDetail, type Issue } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { Issue } from '@/lib/api/endpoints/issues';
 import { useIsPhone } from '@/hooks/useIsPhone';
 import { usePermissions } from '@/hooks/usePermissions';
 import { cn } from '@/lib/utils';
@@ -19,8 +20,7 @@ export function CalendarDayChip({
   color: string;
   onOpen: (id: number) => void;
 }) {
-  // Drag is disabled on phones so a touch scrolls instead of picking up the issue
-  // (see the `sm:touch-none` below), and without work_items edit (rescheduling a
+  // Drag is disabled on phones, and without work_items edit (rescheduling an
   // issue is an issue edit).
   const { can } = usePermissions();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -37,10 +37,11 @@ export function CalendarDayChip({
             {...listeners}
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               onOpen(issue.id);
             }}
             className={cn(
-              'flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-accent sm:touch-none',
+              'flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-accent',
               isDragging && 'opacity-40',
             )}
           >

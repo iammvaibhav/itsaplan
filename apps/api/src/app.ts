@@ -1,20 +1,55 @@
 import {
   auth,
+  getSessionFromHeaders,
+  oAuthDiscoveryMetadata,
+  oAuthProtectedResourceMetadata,
+  withPublicDiscoveryUrls,
   trustedOrigins,
   getAuthSettings,
-  hasConfiguredEmailProvider,
   hasConfiguredGoogle,
+  hasConfiguredOidc,
+  getOidcLabel,
+  isAccountDeactivated,
 } from '@repo/auth';
+import { db, hasConfiguredEmailProvider, user } from '@repo/db';
 import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
 import { Elysia } from 'elysia';
 import { planner } from './planner';
 import { mountMcp } from './mcp/mount';
 import { setMcpApp } from './mcp/app-ref';
-import { internalAgentRunRoutes } from './modules/agents/core/internal-routes';
-import { internalNotificationRoutes } from './modules/notifications/internal-routes';
-import { internalTelegramRoutes } from './modules/telegram/internal-routes';
 import { gitWebhookRoutes } from './modules/git/webhook';
+import { scimRoutes } from './modules/scim';
+import { syncOidcGroupsAfterCallback } from './modules/scim/oidc-sync';
+import { normalizeOpenApiResponse } from './openapi';
+import pkg from '../../../package.json';
+
+const apiUrl = (process.env.API_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
+const appUrl = (process.env.APP_URL?.split(',')[0]?.trim() || 'http://localhost:3001').replace(
+  /\/+$/,
+  '',
+);
+const apiDescription = `REST API for projects, work items, AI agents, Git integrations, analytics, and instance administration.
+
+## Quick start
+
+1. Create a personal API key in [Account settings](${appUrl}/account/api-keys). The key is shown once and carries the same permissions as its owner.
+2. Send it in the \`x-api-key\` header. Never put a key in a URL, issue, comment, or source file.
+3. In routes containing \`{projectKey}\`, name the project by its \`ref\`, \`<team>.<KEY>\` (e.g. \`acme.MKT\`). A bare key also works while only one of your teams has a project with it. This page is opened from a project, but the API document is instance-wide.
+
+\`\`\`sh
+curl "${apiUrl}/projects" \\
+  --header "x-api-key: YOUR_PERSONAL_API_KEY"
+\`\`\`
+
+JSON errors use \`{ "error": "message" }\` and may also include a stable \`code\`. Pagination parameters and response envelopes are documented per operation.
+
+For agent clients, use the MCP endpoint at [${apiUrl}/mcp](${apiUrl}/mcp). SCIM, worker-internal routes, and repository webhooks use the separate credentials shown on their operations.`;
+
+const authorizationServer = async (request: Request) =>
+  withPublicDiscoveryUrls(await oAuthDiscoveryMetadata(auth)(request));
+const protectedResource = async (request: Request) =>
+  withPublicDiscoveryUrls(await oAuthProtectedResourceMetadata(auth)(request));
 
 // The assembled Elysia app, without `.listen()`. `index.ts` imports this and
 // binds the port; tests import it and pass it to Eden Treaty to drive routes in
@@ -25,8 +60,11 @@ export const app = new Elysia()
       origin: trustedOrigins,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
     }),
+  )
+  .onAfterHandle({ as: 'global' }, ({ request, response }) =>
+    normalizeOpenApiResponse(request, response),
   )
   // OpenAPI docs. Mounted on the main app (outside the planner's session guard)
   // so the UI at /docs and the spec at /docs/json are reachable without a
@@ -45,11 +83,14 @@ export const app = new Elysia()
       documentation: {
         info: {
           title: "It's a Plan API",
-          version: '1.0.0',
-          description: 'REST API for projects, issues, and their dependent entities.\n\n',
+          version: pkg.version,
+          description: apiDescription,
         },
+        servers: [{ url: apiUrl, description: 'Configured public API origin' }],
         tags: [
           { name: 'Projects', description: 'Projects and the full work items view' },
+          { name: 'Teams', description: 'Teams that own projects' },
+          { name: 'Workspaces', description: 'Workspaces that own teams, and who manages them' },
           { name: 'Members', description: 'Project membership and roles' },
           { name: 'Roles', description: 'Project roles and their permissions' },
           { name: 'Invites', description: 'Project invites (create, accept, reject)' },
@@ -75,6 +116,7 @@ export const app = new Elysia()
             description: 'Tools configured on a credential and given to agents',
           },
           { name: 'Custom Fields', description: 'Global and type-scoped custom fields' },
+          { name: 'Issue Templates', description: 'Presets a new issue can be created from' },
           { name: 'Issues', description: 'Issues, their fields, feed, and comments' },
           {
             name: 'Initiatives',
@@ -82,6 +124,17 @@ export const app = new Elysia()
           },
           { name: 'Cycles', description: 'Cycles (time-boxed periods of work) and their issues' },
           { name: 'Attachments', description: 'Issue attachments and raw bytes' },
+          {
+            name: 'Chat attachments',
+            description: 'Files uploaded in an agent chat and their raw bytes',
+          },
+          { name: 'Imports', description: 'Import drafts that turn an uploaded file into issues' },
+          {
+            name: 'Import/Export',
+            description:
+              'Background jobs that import issues from an external tracker (Plane), and a ' +
+              "project's own data exported as a portable JSON snapshot",
+          },
           { name: 'Avatars', description: "Current user's avatar image (upload and raw bytes)" },
           { name: 'Views', description: 'Saved work items views' },
           { name: 'Share', description: 'Public read-only sharing of issues and views' },
@@ -93,7 +146,10 @@ export const app = new Elysia()
               'Repository integration: the inbound pull request webhook and its per-project settings',
           },
           { name: 'Agent Schedules', description: 'Recurring tasks for internal agents' },
+          { name: 'Model Prices', description: 'The prices a workspace costs model calls at' },
           { name: 'Dashboards', description: 'Saved analytics dashboards' },
+          { name: 'Documents', description: 'Shared project Docs pages' },
+          { name: 'Link previews', description: 'Public web link metadata' },
           { name: 'Note boards', description: 'Freeform canvases of sticky notes' },
           { name: 'Notifications', description: "The session user's inbox notifications" },
           { name: 'Sync', description: 'Change markers a client polls for live refresh' },
@@ -113,16 +169,16 @@ export const app = new Elysia()
           {
             name: 'God',
             description:
-              'Instance administration: registration policy, email provider, Google sign-in',
+              'Instance administration: registration policy, email provider, sign-in providers, ' +
+              'SCIM provisioning',
+          },
+          {
+            name: 'SCIM',
+            description: 'SCIM 2.0 provisioning, authenticated with the instance SCIM bearer token',
           },
           {
             name: 'System',
             description: 'Liveness, the current session user, and the instance sign-in policy',
-          },
-          {
-            name: 'Internal',
-            description:
-              'Endpoints the worker and the bot call with the shared WORKER_INTERNAL_TOKEN',
           },
         ],
         // Planner routes are session-gated. Besides the session cookie (sent by the
@@ -133,20 +189,83 @@ export const app = new Elysia()
         components: {
           securitySchemes: {
             apiKey: { type: 'apiKey', in: 'header', name: 'x-api-key' },
+            scimBearer: {
+              type: 'http',
+              scheme: 'bearer',
+              bearerFormat: 'opaque',
+              description: 'Instance SCIM token generated in God mode.',
+            },
+            gitHubSignature: {
+              type: 'apiKey',
+              in: 'header',
+              name: 'x-hub-signature-256',
+              description: 'GitHub HMAC signature generated from the raw request body.',
+            },
+            gitLabToken: {
+              type: 'apiKey',
+              in: 'header',
+              name: 'x-gitlab-token',
+              description: 'GitLab secret token configured on the project webhook.',
+            },
+            giteaSignature: {
+              type: 'apiKey',
+              in: 'header',
+              name: 'x-gitea-signature',
+              description: 'Gitea HMAC signature generated from the raw request body.',
+            },
+            forgejoSignature: {
+              type: 'apiKey',
+              in: 'header',
+              name: 'x-forgejo-signature',
+              description: 'Forgejo HMAC signature generated from the raw request body.',
+            },
+            bitbucketSignature: {
+              type: 'apiKey',
+              in: 'header',
+              name: 'x-hub-signature',
+              description: 'Bitbucket HMAC signature generated from the raw request body.',
+            },
           },
         },
         security: [{ apiKey: [] }],
       },
     }),
   )
-  // better-auth: forward every /api/auth/* request to its handler.
-  .all('/api/auth/*', ({ request }) => auth.handler(request))
+  // OAuth discovery lives at the API origin because MCP clients resolve the
+  // authorization server from protected-resource metadata before entering the
+  // Better Auth base path.
+  //
+  // An issuer with a path is looked up with the path after the well-known segment
+  // (RFC 8414 §3), and some clients fall back to OpenID discovery, so each document
+  // answers under any suffix; the proxy decides which of these paths reach the api.
+  .get('/.well-known/oauth-authorization-server', ({ request }) => authorizationServer(request))
+  .get('/.well-known/oauth-authorization-server/*', ({ request }) => authorizationServer(request))
+  .get('/.well-known/openid-configuration', ({ request }) => authorizationServer(request))
+  .get('/.well-known/openid-configuration/*', ({ request }) => authorizationServer(request))
+  .get('/.well-known/oauth-protected-resource', ({ request }) => protectedResource(request))
+  .get('/.well-known/oauth-protected-resource/*', ({ request }) => protectedResource(request))
+  // better-auth: forward every /api/auth/* request to its handler. The OIDC
+  // callback gets one extra step afterwards: folding the provider's `groups` claim
+  // into the SCIM group tables, so a group mapped to a project in god mode grants
+  // access on an OIDC-only instance too, not just one that also runs a SCIM sync.
+  .all('/api/auth/*', async ({ request }) => {
+    const response = await auth.handler(request);
+    if (new URL(request.url).pathname.startsWith('/api/auth/oauth2/callback/')) {
+      await syncOidcGroupsAfterCallback(response);
+    }
+    return response;
+  })
   // Example protected handler: read the session from better-auth.
   .get(
     '/me',
     async ({ request }) => {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!session) return { authenticated: false };
+      const session = await getSessionFromHeaders(request.headers);
+      // A deactivated account is not signed in as far as the app is concerned:
+      // every planner route answers 401 for it, and this is what the screens ask
+      // first. Deactivation arrives over SCIM, after the session was opened.
+      if (!session || isAccountDeactivated(session.user)) {
+        return { authenticated: false };
+      }
       return { authenticated: true, user: session.user };
     },
     {
@@ -155,7 +274,8 @@ export const app = new Elysia()
         summary: 'Get the current session user',
         description:
           'Resolve the request credentials to a session and return the user it belongs to. ' +
-          'Without a session it answers `{ authenticated: false }` instead of failing.',
+          'Without a session, or for a deactivated account, it answers ' +
+          '`{ authenticated: false }` instead of failing.',
       },
     },
   )
@@ -170,11 +290,21 @@ export const app = new Elysia()
       const emailEnabled = await hasConfiguredEmailProvider();
       return {
         registration: settings.registration,
-        // Both are only usable when the instance can actually send mail.
+        // Only usable when the instance can actually send mail.
         magicLink: settings.magicLink && emailEnabled,
-        requireEmailVerification: settings.requireEmailVerification && emailEnabled,
+        // Cleared together with the mail provider, so the raw setting is what the
+        // sign-up endpoint enforces.
+        requireEmailVerification: settings.requireEmailVerification,
         emailEnabled,
+        // Whether the email/password form is offered at all. The api refuses to turn
+        // it off while no provider below is usable, so this is never false alone.
+        emailPassword: settings.emailPassword,
         google: await hasConfiguredGoogle(),
+        oidc: await hasConfiguredOidc(),
+        // Names the operator's own identity provider, so the button shows it as
+        // given. Empty falls back to a translated default.
+        oidcLabel: await getOidcLabel(),
+        hasUsers: (await db.$count(user)) > 0,
       };
     },
     {
@@ -195,11 +325,13 @@ export const app = new Elysia()
       description: 'Liveness probe: returns the api name and `status: "ok"`.',
     },
   })
-  .use(internalAgentRunRoutes)
-  .use(internalNotificationRoutes)
-  .use(internalTelegramRoutes)
   // Inbound repository webhook receiver (authenticated by its per-project secret).
   .use(gitWebhookRoutes)
+  // SCIM 2.0 provisioning (authenticated by the instance SCIM bearer token). Mounted
+  // here rather than under the planner: the planner's session guard would answer 401
+  // before the bearer check runs, and its error handler emits a body SCIM does not
+  // understand.
+  .use(scimRoutes)
   // Planner API: projects, issues, and their dependent entities.
   .use(planner);
 

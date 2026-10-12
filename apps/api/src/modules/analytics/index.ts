@@ -1,4 +1,6 @@
 import { Elysia } from 'elysia';
+import { authContext } from '#shared/auth-context';
+import { requireUser } from '#shared/access';
 import { guards } from '#shared/guards';
 import { mcpTool } from '#mcp/generate';
 import { accessErrors, commonErrors } from '#shared/responses';
@@ -8,6 +10,7 @@ import {
   AgentRunStatsDto,
   AgentWorkloadListResponse,
   BreakdownListResponse,
+  BurnupDto,
   PulseListResponse,
   StatsDto,
   ThroughputListResponse,
@@ -15,6 +18,7 @@ import {
   activityQuery,
   agentRunFeedQuery,
   breakdownQuery,
+  burnupQuery,
   daysQuery,
   pulseQuery,
   throughputQuery,
@@ -24,6 +28,7 @@ import {
   getBreakdown,
   getPulse,
   getThroughput,
+  getBurnup,
   listActivity,
   listAgentRunFeed,
   getAgentRunStats,
@@ -50,6 +55,7 @@ export const analyticsRoutes = new Elysia({
   name: 'analytics',
   detail: { tags: ['Analytics'] },
 })
+  .use(authContext)
   .use(guards)
   .get(
     '/projects/:projectKey/analytics/stats',
@@ -86,11 +92,16 @@ export const analyticsRoutes = new Elysia({
 
   .get(
     '/projects/:projectKey/analytics/pulse',
-    async ({ project, query }) => {
+    async ({ project, query, user }) => {
       const unit = query.unit ?? 'day';
       const columns =
         query.columns != null ? Math.min(Math.max(query.columns, 1), MAX_PULSE_COLUMNS[unit]) : 26;
-      return getPulse(project.id, unit, columns);
+      return getPulse(
+        project.id,
+        unit,
+        columns,
+        query.scope === 'me' ? requireUser(user).id : undefined,
+      );
     },
     {
       query: pulseQuery,
@@ -98,7 +109,8 @@ export const analyticsRoutes = new Elysia({
       response: { 200: PulseListResponse, ...commonErrors },
       detail: {
         summary: 'Get project pulse',
-        description: 'Activity counts over time for a heatmap.',
+        description:
+          'Activity counts over time. Scope me counts only events performed by the authenticated user; project includes all project activity.',
         ...mcpTool('get_project_pulse'),
       },
     },
@@ -118,6 +130,31 @@ export const analyticsRoutes = new Elysia({
         summary: 'Get project throughput',
         description: 'Created versus closed issues over time.',
         ...mcpTool('get_project_throughput'),
+      },
+    },
+  )
+
+  .get(
+    '/projects/:projectKey/analytics/burnup',
+    async ({ project, query }) => {
+      const days = query.days != null ? Math.min(Math.max(query.days, 7), 730) : 90;
+      const forecastWeeks =
+        query.forecastWeeks != null ? Math.min(Math.max(query.forecastWeeks, 1), 12) : 4;
+      return getBurnup(project.id, {
+        days,
+        initiativeId: query.initiativeId ?? null,
+        forecastWeeks,
+      });
+    },
+    {
+      query: burnupQuery,
+      permission: ['dashboards', 'read'],
+      response: { 200: BurnupDto, ...commonErrors },
+      detail: {
+        summary: 'Get project burnup',
+        description:
+          'Scope, started and completed issue counts at the end of each day, with a completion date projected from the recent closing rate and scope growth. Optionally limited to one initiative.',
+        ...mcpTool('get_project_burnup'),
       },
     },
   )

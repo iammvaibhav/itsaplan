@@ -3,7 +3,7 @@ import { useTranslations } from 'next-intl';
 import { issueColor, type Maps } from '@/utils/project';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useSubtasks } from '../../context/useSubtasks';
+import { useIssueSubtaskFold, useSubtasks } from '../../context/useSubtasks';
 import { effSpan, LINK_ROW_H } from '../../utils/timeline';
 
 // The issue's subtasks as sub-rows under its timeline row: each subtask named on
@@ -37,6 +37,8 @@ export function TimelineSubtaskRows({
 }) {
   const t = useTranslations('workItems.timeline');
   const subtasks = useSubtasks(issueId);
+  const { open } = useIssueSubtaskFold();
+  if (!open) return null;
 
   return (
     <>
@@ -62,7 +64,10 @@ export function TimelineSubtaskRows({
                 indented ? 'pl-10' : 'pl-6',
               )}
               style={{ width: labelW }}
-              onClick={() => onOpen(subtask.id)}
+              onClick={(e) => {
+                e.preventDefault();
+                onOpen(subtask.id);
+              }}
             >
               {/* Marks the row as nested under the issue row above: the sub-rows
                   are otherwise only indented, which reads as a link row. */}
@@ -84,7 +89,10 @@ export function TimelineSubtaskRows({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
-                    onClick={() => onOpen(subtask.id)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onOpen(subtask.id);
+                    }}
                     className="absolute top-1/2 z-10 flex h-3.5 -translate-y-1/2 cursor-pointer items-center rounded-sm px-1.5 text-white opacity-80"
                     style={{
                       left: rect.left,

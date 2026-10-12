@@ -8,11 +8,13 @@ import pkg from '../../../../../package.json';
 // The feed is github.com web content, not the REST API, so no token and no
 // 60/hour limit (modules/agents/skills/skill-format.ts reads github.com atom the
 // same way).
-// The result is not stored on the server: every read fetches the feed, and the
-// browser holds it behind a stale time (web services/updates.service.ts).
-// A failed check leaves the local history intact.
+// The feed is read at most once every FEED_TTL_MS: the what's-new screen asks on
+// every session, and a fetch per session would both be slow and hammer github.
+// "Check for updates" bypasses the cache. A failed read answers from the last
+// successful one, and from the local history when there is none.
 
 const FETCH_TIMEOUT_MS = 10_000;
+const FEED_TTL_MS = 30 * 60_000;
 
 // Fixed: an instance checks the project it is built from, so there is nothing to
 // configure.
@@ -142,18 +144,26 @@ async function readFeed(): Promise<Release[]> {
   return parseReleasesAtom(await res.text());
 }
 
-// Null when the feed cannot be read, so the caller answers from the local history
-// alone instead of reporting a check that did not happen.
-async function publishedReleases(): Promise<Release[] | null> {
+interface FeedRead {
+  releases: Release[];
+  readAt: string;
+}
+
+let feed: FeedRead | null = null;
+
+// Null when the feed has never been read, so the caller answers from the local
+// history alone instead of reporting a check that did not happen.
+async function publishedReleases(force = false): Promise<FeedRead | null> {
   // The suite must not depend on github.com being reachable, and the same
   // NODE_ENV already gates the db reset helper.
   if (process.env.NODE_ENV === 'test') return null;
+  if (!force && feed && Date.now() - Date.parse(feed.readAt) < FEED_TTL_MS) return feed;
   try {
-    return await readFeed();
+    feed = { releases: await readFeed(), readAt: new Date().toISOString() };
   } catch (err) {
     console.error('[updates] check failed:', err);
-    return null;
   }
+  return feed;
 }
 
 // Newest first, a feed entry preferred over the changelog section of the same version.
@@ -164,15 +174,33 @@ export function mergeHistory(published: Release[], local: Release[]): Release[] 
   );
 }
 
-export async function getUpdateStatus(): Promise<UpdateStatus> {
-  const feed = await publishedReleases();
-  const published = feed ?? [];
+// How far back the history screen reads. Older releases stay in CHANGELOG.md and on
+// the releases page the screen links to.
+const HISTORY_LIMIT = 10;
+
+export async function getUpdateStatus(force = false): Promise<UpdateStatus> {
+  const checked = await publishedReleases(force);
+  const published = checked?.releases ?? [];
   const currentVersion = getAppVersion();
   return {
     currentVersion,
     latestVersion: published[0]?.version ?? null,
     updateAvailable: published.some((r) => compareVersions(r.version, currentVersion) > 0),
-    checkedAt: feed ? new Date().toISOString() : null,
-    releases: mergeHistory(published, await localHistory()),
+    checkedAt: checked?.readAt ?? null,
+    releases: mergeHistory(published, await localHistory()).slice(0, HISTORY_LIMIT),
   };
+}
+
+// What the reader has not seen yet: the releases after seenVersion up to the running
+// one, newest first. Null seenVersion is an account that has never closed the screen
+// — it gets the running release alone rather than the whole history. The feed's notes
+// are preferred over the changelog section of the same version: the changelog is
+// generated from commit subjects, the release page is written for a reader.
+export async function releasesSince(seenVersion: string | null): Promise<Release[]> {
+  const current = getAppVersion();
+  const history = mergeHistory((await publishedReleases())?.releases ?? [], await localHistory());
+  return history.filter((r) => {
+    if (compareVersions(r.version, current) > 0) return false;
+    return seenVersion ? compareVersions(r.version, seenVersion) > 0 : r.version === current;
+  });
 }

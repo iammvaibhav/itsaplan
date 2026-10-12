@@ -5,6 +5,9 @@
   "openAsPage": "Открыть как страницу",
   "titlePlaceholder": "Название задачи",
   "noActivity": "Активности пока нет.",
+  "noComments": "Комментариев пока нет.",
+  "noHistory": "Изменений пока нет.",
+  "noWorklog": "Время пока не списано.",
   "noActivityInStretch": "Нет активности за этот период.",
   "activityLoadFailed": "Не удалось загрузить активность.",
   "fields": {
@@ -47,6 +50,12 @@
     "dueDate": "Дедлайн",
     "clearDueDate": "Убрать дедлайн",
     "labels": "Метки",
+    "copyId": "Скопировать ID",
+    "copyShortLink": "Скопировать короткую ссылку",
+    "copyFullUrl": "Скопировать полную ссылку",
+    "copyTitle": "Скопировать название",
+    "copyDescription": "Скопировать описание",
+    "copyBranch": "Скопировать имя ветки",
     "copyPrompt": "Скопировать промпт",
     "restore": "Восстановить",
     "archive": "Архивировать",
@@ -54,6 +63,7 @@
     "noDelegate": "Без делегата",
     "noInitiative": "Без инициативы",
     "noCycle": "Без цикла",
+    "copyFailed": "Не удалось скопировать",
     "promptCopied": "Промпт скопирован"
   },
   "commands": {
@@ -88,7 +98,9 @@
   },
   "actionsBar": {
     "shortLinkCopied": "Короткая ссылка скопирована",
+    "branchCopied": "Название ветки скопировано",
     "copyShortLink": "Скопировать короткую ссылку",
+    "copyBranch": "Скопировать название ветки",
     "copied": "Скопировано!",
     "copyPrompt": "Скопировать промпт",
     "sharedPublicly": "В общем доступе",
@@ -96,7 +108,8 @@
     "restore": "Восстановить задачу",
     "archive": "Архивировать задачу",
     "delete": "Удалить задачу",
-    "shareIssue": "Поделиться задачей"
+    "shareIssue": "Поделиться задачей",
+    "move": "Перенести в другой проект"
   },
   "actions": {
     "deleteTitle": "Удалить задачу",
@@ -105,7 +118,16 @@
     "cannotBeUndone": "Это действие нельзя отменить.",
     "deleteDescription": "Удалить {issue}? Вместе с ней будут удалены комментарии, активность и вложения.",
     "archiveDescription": "Архивировать {issue}? Она исчезнет с доски, её можно будет восстановить позже.",
-    "applyDescription": "Применить <v>{action}</v> к этой задаче?"
+    "applyDescription": "Применить <v>{action}</v> к этой задаче?",
+    "moveTitle": "Перенести задачу",
+    "move": "Перенести",
+    "moveDescription": "Перенести {issue} в другой проект этой команды. Там задача получит новый номер, а старая ссылка продолжит её открывать.",
+    "moveSubtasks": "{count, plural, one {# подзадача переносится вместе с ней.} few {# подзадачи переносятся вместе с ней.} many {# подзадач переносятся вместе с ней.} other {# подзадачи переносятся вместе с ней.}}",
+    "moveProject": "Проект",
+    "moveChooseProject": "Выберите проект",
+    "moveColumn": "Статус",
+    "moveColumnMatching": "Соответствующий статус",
+    "moveCarriedOver": "Тип, метки и пользовательские поля сохраняются, если в целевом проекте есть такие же по названию. Цикл, инициатива и связи с задачами этого проекта удаляются."
   },
   "create": {
     "title": "Новая задача",
@@ -114,7 +136,10 @@
     "noFields": "Полей нет.",
     "description": "Описание",
     "other": "Другое",
-    "submit": "Создать задачу"
+    "submit": "Создать задачу",
+    "template": "Шаблон",
+    "applyTemplate": "Применить шаблон…",
+    "noTemplates": "Шаблонов нет."
   },
   "attachments": {
     "title": "Вложения",
@@ -135,6 +160,8 @@
     "download": "Скачать",
     "downloadFile": "Скачать {name}",
     "deleteFile": "Удалить {name}",
+    "deleteTitle": "Удалить вложение",
+    "deleteConfirmation": "Удалить {name}? Файл также будет убран из описания везде, где он встроен. Действие нельзя отменить.",
     "preview": "Посмотреть {name}",
     "remove": "Убрать {name}",
     "removeShort": "Убрать",
@@ -191,7 +218,11 @@
     "detachFromParent": "Отвязать от {parent}",
     "subtaskOf": "Подзадача {issue}",
     "existingIssue": "Существующая задача",
-    "searchPrompt": "Поиск задач, чтобы добавить подзадачей…"
+    "searchPrompt": "Поиск задач, чтобы добавить подзадачей…",
+    "filter": "Фильтр по статусу",
+    "hiding": "Скрыто: {states}",
+    "clearFilter": "Сбросить фильтр",
+    "allHidden": "Все подзадачи скрыты фильтром."
   },
   "subtaskDisposal": {
     "intro": "{issues, plural, one {У этой задачи} other {У этих задач}} {count, plural, one {# подзадача} few {# подзадачи} many {# подзадач} other {# подзадачи}}.",
@@ -215,7 +246,12 @@
     "cancel": "Отмена",
     "toSend": "чтобы отправить",
     "unknownAuthor": "Неизвестный",
-    "goToLastComment": "Перейти к последнему комментарию"
+    "goToLastComment": "Перейти к последнему комментарию",
+    "edit": "Редактировать",
+    "edited": "изменено",
+    "deleteComment": "Удалить комментарий",
+    "deleteCommentTitle": "Удалить этот комментарий?",
+    "deleteCommentConfirmation": "Комментарий и ответы на него будут удалены безвозвратно."
   },
   "stats": {
     "title": "Статистика",
@@ -234,11 +270,7 @@
     "endTime": "Окончание"
   },
   "editor": {
-    "insertImage": "Вставить изображение",
-    "insertNamed": "Вставить {name}",
-    "descriptionPlaceholder": "Добавьте описание…",
-    "noImages": "Изображений пока нет. Загрузите из панели вложений или перетащите прямо в редактор.",
-    "image": "Изображение"
+    "descriptionPlaceholder": "Добавьте описание…"
   },
   "cycleSelect": {
     "label": "Цикл",
@@ -317,17 +349,96 @@
     "pullRequestOpened": "открыл(а) пул-реквест <v>{pr}</v>",
     "worklogAdded": "записал(а) <v>{time}</v> за <v>{date}</v>",
     "worklogChanged": "изменил(а) запись <v>{from}</v> за <v>{fromDate}</v> на <v>{to}</v> за <v>{date}</v>",
-    "worklogRemoved": "удалил(а) запись <v>{time}</v> за <v>{date}</v>"
+    "worklogRemoved": "удалил(а) запись <v>{time}</v> за <v>{date}</v>",
+    "commentEdited": "изменил комментарий",
+    "commentDeleted": "удалил комментарий",
+    "issueMoved": "перенёс задачу из <v>{from}</v> в <v>{to}</v>"
+  },
+  "development": {
+    "title": "Разработка",
+    "unlink": "Удалить связь с разработкой",
+    "branch": "Ветка",
+    "add": "Добавить",
+    "empty": "Привязать существующий PR/MR или создать новый из ветки",
+    "linkExisting": "Привязать существующий",
+    "linkExistingDescription": "Выберите pull request или merge request из подключённого репозитория.",
+    "createPullRequest": "Создать PR/MR",
+    "createPullRequestDescription": "Создайте PR/MR из существующей ветки и привяжите его к задаче.",
+    "noConnectedRepositories": "Сначала подключите репозиторий GitHub или GitLab в настройках проекта.",
+    "loadingRepositories": "Загружаем репозитории…",
+    "chooseRepository": "Выберите репозиторий",
+    "openOnly": "Открытые",
+    "allPullRequests": "Все",
+    "searchPullRequests": "Поиск по названию, ветке или номеру…",
+    "loadingPullRequests": "Загружаем PR/MR…",
+    "noPullRequests": "PR/MR не найдены.",
+    "alreadyLinked": "Привязан",
+    "loadMore": "Показать ещё",
+    "cancel": "Отмена",
+    "linking": "Привязываем…",
+    "linkPullRequest": "Привязать PR/MR",
+    "linkedSuccess": "PR/MR привязан",
+    "linkFailed": "Не удалось привязать PR/MR",
+    "repository": "Репозиторий",
+    "sourceBranch": "Исходная ветка",
+    "targetBranch": "Целевая ветка",
+    "chooseBranch": "Выберите ветку",
+    "loadingBranches": "Загружаем ветки…",
+    "loadMoreBranches": "Показать ещё ветки",
+    "pullRequestTitle": "Название",
+    "description": "Описание",
+    "descriptionPlaceholder": "Добавьте контекст для ревью…",
+    "mergeBehavior": "Связь с задачей",
+    "closeOnMerge": "Закрыть после merge",
+    "referenceOnly": "Только упомянуть",
+    "createAsDraft": "Создать как draft",
+    "branchesMustDiffer": "Исходная и целевая ветки должны отличаться.",
+    "creating": "Создаём…",
+    "createdSuccess": "PR/MR создан и привязан",
+    "createFailed": "Не удалось создать PR/MR",
+    "draft": "Черновик",
+    "ready": "Готово к слиянию",
+    "open": "Открыт",
+    "merged": "Смержен",
+    "closed": "Закрыт",
+    "updated": "Обновлено {date}",
+    "openPipeline": "Открыть pipeline",
+    "checks": "{count, plural, one {# проверка} few {# проверки} many {# проверок} other {# проверки}}",
+    "pipeline": {
+      "pending": "Ожидает",
+      "running": "Выполняется",
+      "success": "Пройден",
+      "failed": "Ошибка",
+      "canceled": "Отменён",
+      "skipped": "Пропущен"
+    }
+  },
+  "documents": {
+    "title": "Документы",
+    "add": "Связать документ",
+    "empty": "Связанных документов пока нет.",
+    "loadFailed": "Не удалось загрузить связанные страницы. Нажмите, чтобы повторить.",
+    "remove": "Отвязать {title}",
+    "untitled": "Без названия"
   },
   "archived": "В архиве",
   "activityHeading": "Активность",
-  "feedFlat": "Списком",
-  "feedGrouped": "По статусам",
+  "feedTabAll": "Все",
+  "feedTabComments": "Комментарии",
+  "feedTabHistory": "История",
+  "feedTabWorklog": "Учёт времени",
+  "feedStatus": "Статусы",
+  "feedGroupByStatus": "Группировать по статусам",
+  "feedNewest": "Сначала новые",
+  "feedOldest": "Сначала старые",
+  "feedChangeOrder": "Изменить порядок",
+  "feedRunToggle": "Показать похожие изменения",
   "shareUnavailable": "Эта общая задача недоступна. Возможно, ссылку отозвали.",
   "fieldSelects": {
     "changeState": "Изменить статус…",
     "changeType": "Изменить тип…",
     "noType": "Без типа",
+    "unsetState": "Без статуса",
     "noAssignee": "Без исполнителя",
     "assignTo": "Назначить…",
     "you": "Вы",
@@ -350,7 +461,14 @@
   },
   "watchers": {
     "watch": "Следить",
-    "unwatch": "Не следить"
+    "unwatch": "Не следить",
+    "manage": "Управлять наблюдателями",
+    "search": "Найти участника проекта…",
+    "empty": "Участники не найдены.",
+    "you": "{name} (вы)",
+    "add": "Добавить {name} в наблюдатели",
+    "remove": "Убрать {name} из наблюдателей",
+    "watchingCount": "{count, plural, =0 {Никто не следит} one {# наблюдатель} few {# наблюдателя} many {# наблюдателей} other {# наблюдателя}}"
   },
   "effects": {
     "cleared": "Очищено",

@@ -7,6 +7,7 @@ import { resetDb } from '#tests/helpers/db';
 import { addProjectMember } from '#tests/helpers/members';
 import { createComment } from '#modules/issues/activity';
 import { claimDueRuns } from '../../run-queue';
+import { createAgent } from '#tests/helpers/agents';
 
 // Mentioning an agent in a comment queues an agent_run so the agent can reply. The
 // queue is drained by the in-process poller for an internal agent (not exercised
@@ -21,20 +22,21 @@ import { claimDueRuns } from '../../run-queue';
 async function setup() {
   const owner = await signUpTestUser({ name: 'Owner' });
   const asOwner = authedApi(owner.cookie);
-  await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
+  const project = await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
   const view = await asOwner.projects({ projectKey: 'MKT' }).get();
   const columnId = view.data!.columns[0].id;
-  return { owner, asOwner, columnId };
+  return { owner, asOwner, columnId, teamId: project.data!.teamId };
 }
 
-const agents = (api: Api) => api.projects({ projectKey: 'MKT' })['ai-agents'];
+// The agent routes of the team the project belongs to, which is where agents live.
+const agents = (api: Api, teamId: number) => api.teams({ teamId })['ai-agents'];
 
 function createIssue(client: Api, columnId: number) {
   return client.projects({ projectKey: 'MKT' }).issues.post({ columnId, title: 'Task' });
 }
 
 async function createInternalAgent(asOwner: Api, name: string, username: string) {
-  const res = await agents(asOwner).post({ name, username, kind: 'internal' });
+  const res = await createAgent(asOwner, 'MKT', { name, username, kind: 'internal' });
   return res.data!.agent;
 }
 
@@ -197,7 +199,7 @@ describe('agent mention runs', () => {
   it('queues a run for an external agent mentioned by its owner', async () => {
     const { asOwner, columnId } = await setup();
     const ext = (
-      await agents(asOwner).post({
+      await createAgent(asOwner, 'MKT', {
         name: 'Ext Bot',
         username: 'ext',
         kind: 'external',
@@ -215,8 +217,9 @@ describe('agent mention runs', () => {
 
   it('leaves an external agent alone until its mention trigger is turned on', async () => {
     const { asOwner, columnId } = await setup();
-    const ext = (await agents(asOwner).post({ name: 'Ext Bot', username: 'ext', kind: 'external' }))
-      .data!.agent;
+    const ext = (
+      await createAgent(asOwner, 'MKT', { name: 'Ext Bot', username: 'ext', kind: 'external' })
+    ).data!.agent;
     const issue = (await createIssue(asOwner, columnId)).data!;
 
     await asOwner.issues({ issueId: issue.id }).comments.post({ body: mention(ext.username) });
@@ -224,9 +227,9 @@ describe('agent mention runs', () => {
   });
 
   it('does not queue an owner-scoped external agent for another member', async () => {
-    const { asOwner, columnId } = await setup();
+    const { asOwner, columnId, teamId } = await setup();
     const ext = (
-      await agents(asOwner).post({
+      await createAgent(asOwner, 'MKT', {
         name: 'Ext Bot',
         username: 'ext',
         kind: 'external',
@@ -240,7 +243,7 @@ describe('agent mention runs', () => {
     await asMember.issues({ issueId: issue.id }).comments.post({ body: mention(ext.username) });
     expect((await runsForIssue(issue.id)).length).toBe(0);
 
-    await agents(asOwner)({ agentId: ext.id }).patch({ runnerScope: 'project' });
+    await agents(asOwner, teamId)({ agentId: ext.id }).patch({ runnerScope: 'team' });
     await asMember.issues({ issueId: issue.id }).comments.post({ body: mention(ext.username) });
     expect((await runsForIssue(issue.id)).length).toBe(1);
   });

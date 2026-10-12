@@ -1,6 +1,6 @@
 import { Radio } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { AiAgent } from '@/lib/api';
+import type { AiAgent } from '@/lib/api/endpoints/agents';
 import { cn } from '@/lib/utils';
 import { formatDurationShort } from '@/utils/dates';
 import { isRunnerOnline } from './runnerOnline';
@@ -20,7 +20,7 @@ export function AgentRunnerStatus({
   agent: AiAgent | null;
   compact?: boolean;
 }) {
-  const t = useTranslations('settings.agents');
+  const t = useTranslations('teams.agents');
   const lastSeen = agent?.lastSeenAt ?? null;
   const online = isRunnerOnline(agent);
 

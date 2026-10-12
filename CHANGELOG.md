@@ -1,5 +1,323 @@
 # Changelog
 
+## [1.4.0](https://github.com/croffasia/itsaplan/compare/v1.3.0...v1.4.0) (2026-10-08)
+
+
+### Features
+
+* **agents:** per-agent reasoning effort for internal agents ([#501](https://github.com/croffasia/itsaplan/issues/501)) ([92dfb98](https://github.com/croffasia/itsaplan/commit/92dfb989f5eda19969d0155b5194676d0e33430c))
+* **api:** expose team project creation through MCP ([#496](https://github.com/croffasia/itsaplan/issues/496)) ([f713340](https://github.com/croffasia/itsaplan/commit/f713340e0e725316c3bd413bea9c51c1d710382b))
+* give workspace owners and admins access to every team and project ([#483](https://github.com/croffasia/itsaplan/issues/483)) ([c29acdf](https://github.com/croffasia/itsaplan/commit/c29acdf0f4f4f12ba4910b72bb5bd292afc5177f))
+* **import:** import from Linear ([#495](https://github.com/croffasia/itsaplan/issues/495)) ([f3c5dc6](https://github.com/croffasia/itsaplan/commit/f3c5dc635820ea3c0a18b2b9d2cf960ee0912fbc))
+* let a team owner delete a team ([#486](https://github.com/croffasia/itsaplan/issues/486)) ([a952a0d](https://github.com/croffasia/itsaplan/commit/a952a0daa07f528768b06db52078f14555e1c7ae))
+* move an issue to another project of the same team ([#493](https://github.com/croffasia/itsaplan/issues/493)) ([7b4ff64](https://github.com/croffasia/itsaplan/commit/7b4ff6414315c96f2b843e389cef1ffdafe6fba9))
+* personal workspaces, workspace settings and instance-wide SCIM ([#478](https://github.com/croffasia/itsaplan/issues/478)) ([a32ab66](https://github.com/croffasia/itsaplan/commit/a32ab660d45719ab67b6d19554b7cc0fc6e1cfe9))
+* start an agent schedule when an issue enters a state ([#499](https://github.com/croffasia/itsaplan/issues/499)) ([1ce0a05](https://github.com/croffasia/itsaplan/commit/1ce0a058b2954e8098c0b577d5ecb7a2985abd95))
+* **worker:** keep the source's created and updated dates on imported issues ([#476](https://github.com/croffasia/itsaplan/issues/476)) ([57fd090](https://github.com/croffasia/itsaplan/commit/57fd0902b82bd02e8a269b4f082148d68fcc30bf))
+
+
+### Bug Fixes
+
+* **api:** ship the PostgreSQL 18 client for the pre-migration backup ([#492](https://github.com/croffasia/itsaplan/issues/492)) ([fb9a858](https://github.com/croffasia/itsaplan/commit/fb9a8588a7cacc66771aa0f0ddb5c9ddbd3f2474))
+* respect inbox filters in bulk notification actions ([#487](https://github.com/croffasia/itsaplan/issues/487)) ([169bf24](https://github.com/croffasia/itsaplan/commit/169bf240292ecf67bc7fc67d116cda79e37c8990))
+* update dependencies with security advisories ([#497](https://github.com/croffasia/itsaplan/issues/497)) ([887a2c5](https://github.com/croffasia/itsaplan/commit/887a2c579bdbb76cb6eac782d78a8fb0bc3a86c3))
+* update transitive dependencies with security advisories ([#490](https://github.com/croffasia/itsaplan/issues/490)) ([bf8465c](https://github.com/croffasia/itsaplan/commit/bf8465cd6525b9a4a814e5d5275680fa9aea3026))
+* **web:** seed a Docs session from the stored Markdown, not the open editor ([#482](https://github.com/croffasia/itsaplan/issues/482)) ([445f324](https://github.com/croffasia/itsaplan/commit/445f32437ace616fe8874d3132bc1ea79ddf5b2f))
+* **web:** show release notes above the document toolbar ([#481](https://github.com/croffasia/itsaplan/issues/481)) ([c90346b](https://github.com/croffasia/itsaplan/commit/c90346b518b0b61cd455e0b5493d9bee6ca669f1))
+* **worker:** don't count a rate-limited tick as a failed attempt ([#494](https://github.com/croffasia/itsaplan/issues/494)) ([48b2426](https://github.com/croffasia/itsaplan/commit/48b2426de65ea2d0a098c0a27f8b8278bec42d7c))
+* **worker:** keep distinct source issues with the same title apart ([#474](https://github.com/croffasia/itsaplan/issues/474)) ([a481f60](https://github.com/croffasia/itsaplan/commit/a481f602b687234b26a3c70cbb46cbb67bb74a20))
+* **worker:** read an issue's comments before recording it as imported ([#475](https://github.com/croffasia/itsaplan/issues/475)) ([2358676](https://github.com/croffasia/itsaplan/commit/23586761707a8316f402505e201e47c14bea594c))
+
+
+### Refactoring
+
+* let an extending build add agent schedule types ([#503](https://github.com/croffasia/itsaplan/issues/503)) ([6d08194](https://github.com/croffasia/itsaplan/commit/6d0819449078896fc6c350ed4591da20167fa8c3))
+* **web:** pass the core workspace sections through useWorkspaceSections ([#491](https://github.com/croffasia/itsaplan/issues/491)) ([f948617](https://github.com/croffasia/itsaplan/commit/f94861707d9938f87b5e8cd96bdfc324aa4d016c))
+* **worker:** make the import pipeline source-neutral ([#477](https://github.com/croffasia/itsaplan/issues/477)) ([1acb20c](https://github.com/croffasia/itsaplan/commit/1acb20ccced4f2019fcc5ccb04f49fcdec9c2b8b))
+
+
+### Documentation
+
+* remove breaking-changes.md in favor of release notes ([#472](https://github.com/croffasia/itsaplan/issues/472)) ([ba331ae](https://github.com/croffasia/itsaplan/commit/ba331aee07c1483a0713e2f4c6538e8c9c934d45))
+
+
+### Tests
+
+* **api:** expect 409 when the workspace owner loses an ownership race ([#484](https://github.com/croffasia/itsaplan/issues/484)) ([dd559ad](https://github.com/croffasia/itsaplan/commit/dd559ad5665f662d543b0d222439d67e74de190b))
+
+## [1.3.0](https://github.com/croffasia/itsaplan/compare/v1.2.1...v1.3.0) (2026-10-04)
+
+
+### Features
+
+* add workspaces above teams ([#468](https://github.com/croffasia/itsaplan/issues/468)) ([bd8a474](https://github.com/croffasia/itsaplan/commit/bd8a4740fa6f9d3be6d787ee77525e1acc30ca72))
+* archive and restore projects ([#465](https://github.com/croffasia/itsaplan/issues/465)) ([59c83e3](https://github.com/croffasia/itsaplan/commit/59c83e3054128b444a0de70faec985343fb1171a))
+* **web:** add issue copy submenu ([#451](https://github.com/croffasia/itsaplan/issues/451)) ([7cbaa78](https://github.com/croffasia/itsaplan/commit/7cbaa78672b578f8fc7082692fee3059c7b9c156))
+
+
+### Bug Fixes
+
+* **api:** serialize external agent chat replies by thread ([#461](https://github.com/croffasia/itsaplan/issues/461)) ([ed2eaac](https://github.com/croffasia/itsaplan/commit/ed2eaac8d961cd4f9c29a9efaf303b0db4f72ce3))
+* **web:** keep Ctrl+B in text fields from toggling the sidebar ([#469](https://github.com/croffasia/itsaplan/issues/469)) ([451226c](https://github.com/croffasia/itsaplan/commit/451226c8cd5e5de030d0371a13c9c65093ac4580))
+* **web:** scroll lists on touch instead of dragging cards on tablets ([#464](https://github.com/croffasia/itsaplan/issues/464)) ([91a30b2](https://github.com/croffasia/itsaplan/commit/91a30b2bb520cd76c94992ed71b6b4a6097c75ee))
+* **worker:** reject a failed attachment download ([#471](https://github.com/croffasia/itsaplan/issues/471)) ([4fa48da](https://github.com/croffasia/itsaplan/commit/4fa48da0f5d44fbb253240cbd6a73fde0efbc689))
+
+## [1.2.1](https://github.com/croffasia/itsaplan/compare/v1.2.0...v1.2.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* let a project with a legacy key take a valid one ([#449](https://github.com/croffasia/itsaplan/issues/449)) ([c9e82d9](https://github.com/croffasia/itsaplan/commit/c9e82d9376cbfd253b1d29c878aeb23887ea97f9))
+
+## [1.2.0](https://github.com/croffasia/itsaplan/compare/v1.1.0...v1.2.0) (2026-09-26)
+
+
+### Features
+
+* add tabs, counts and order to the issue activity feed ([#448](https://github.com/croffasia/itsaplan/issues/448)) ([ab78ffb](https://github.com/croffasia/itsaplan/commit/ab78ffbbf11a9d09282ac84cf06df94c1dad17ae))
+* add team agent defaults and cap chat claim waits ([#425](https://github.com/croffasia/itsaplan/issues/425)) ([942a40c](https://github.com/croffasia/itsaplan/commit/942a40cef274667c85db21c45621963f0ba22cb7))
+* **api:** let MCP assistants open and view attachment images ([#431](https://github.com/croffasia/itsaplan/issues/431)) ([9a030c2](https://github.com/croffasia/itsaplan/commit/9a030c2d3026ee4f836eba4966d657e2c675e9ee))
+* **dashboards:** add a burnup widget with a projected completion date ([#285](https://github.com/croffasia/itsaplan/issues/285)) ([6246152](https://github.com/croffasia/itsaplan/commit/62461525eff28f9ce0759e456b9735d46ee7a518))
+* enrich webhook payloads and cap webhook response reads ([#446](https://github.com/croffasia/itsaplan/issues/446)) ([dd4d0b5](https://github.com/croffasia/itsaplan/commit/dd4d0b54433bfb5212623a0b2b0141e09caf5325))
+* per-team project keys and team-first URLs ([#433](https://github.com/croffasia/itsaplan/issues/433)) ([79e6675](https://github.com/croffasia/itsaplan/commit/79e66756debadb2cf0f8fb1a5ce2aa3f4603da3b))
+* replace MinIO with RustFS for attachment storage ([#437](https://github.com/croffasia/itsaplan/issues/437)) ([e063a15](https://github.com/croffasia/itsaplan/commit/e063a152857e5b754d7b40d4bce5f623dda5250a))
+* share Git provider connections across a team ([#426](https://github.com/croffasia/itsaplan/issues/426)) ([86a8b18](https://github.com/croffasia/itsaplan/commit/86a8b18acdda00362d937fe79899d4b6f266c1bb))
+* **web:** filter subtasks by state and change state from issue rows ([#443](https://github.com/croffasia/itsaplan/issues/443)) ([08647f4](https://github.com/croffasia/itsaplan/commit/08647f4c1b909e33310f320bbcf6f22b68e1cd52))
+* **web:** link issue identifiers and highlight mentions of the viewer ([#435](https://github.com/croffasia/itsaplan/issues/435)) ([6d71dca](https://github.com/croffasia/itsaplan/commit/6d71dca523f380b05c2a6458015b058ee5237f3f))
+
+
+### Improvements
+
+* **web:** redesign the project switcher dropdown ([#439](https://github.com/croffasia/itsaplan/issues/439)) ([8080f6a](https://github.com/croffasia/itsaplan/commit/8080f6a5b3dd91eb2c372fb7a626d779e8fd0aab))
+* **web:** show project keys and last activity under the name in the switcher ([#445](https://github.com/croffasia/itsaplan/issues/445)) ([384f862](https://github.com/croffasia/itsaplan/commit/384f862e6df93c3b2dbcce034abbd66a4357e3bf))
+* **web:** show the burnup forecast range by default ([#442](https://github.com/croffasia/itsaplan/issues/442)) ([2c64d57](https://github.com/croffasia/itsaplan/commit/2c64d570649f444957452daca231d84b06acc8fa))
+
+
+### Bug Fixes
+
+* **api:** send x-opencode-session to OpenCode Go ([#440](https://github.com/croffasia/itsaplan/issues/440)) ([4c5c4a6](https://github.com/croffasia/itsaplan/commit/4c5c4a67a18733cd4744c54e1352c4405c4a290c))
+* run migrations as a separate step before the apps start ([#444](https://github.com/croffasia/itsaplan/issues/444)) ([9425514](https://github.com/croffasia/itsaplan/commit/942551408ab6c59875ababe7a9b825fea35391d9))
+* **runner:** keep chat tool text within the 32000 character limit ([#424](https://github.com/croffasia/itsaplan/issues/424)) ([4dd4e8a](https://github.com/croffasia/itsaplan/commit/4dd4e8a5c38168a6ee6cf8e31da62a26967bfc4c))
+
+## [1.1.0](https://github.com/croffasia/itsaplan/compare/v1.0.0...v1.1.0) (2026-09-23)
+
+
+### Features
+
+* add personal activity scope to the pulse widget ([#384](https://github.com/croffasia/itsaplan/issues/384)) ([945fef2](https://github.com/croffasia/itsaplan/commit/945fef2858b42f0edc3564f8200c9ef82841b2c4))
+* add personal project navigation and discovery ([#365](https://github.com/croffasia/itsaplan/issues/365)) ([8c5cbdf](https://github.com/croffasia/itsaplan/commit/8c5cbdf5854367ffb9279597de1389d3d6483d2c))
+* implement Plane import/export with job management and UI ([#389](https://github.com/croffasia/itsaplan/issues/389)) ([88a43a9](https://github.com/croffasia/itsaplan/commit/88a43a9197f46c43a68d41c9f69ded829fcad74f))
+* improve Docs navigation and collaborative editing ([#386](https://github.com/croffasia/itsaplan/issues/386)) ([0ff436b](https://github.com/croffasia/itsaplan/commit/0ff436b1982e15175c9068cb04c8c62a26e20be1))
+* open sign-up on a fresh instance and offer a data reset in setup ([#410](https://github.com/croffasia/itsaplan/issues/410)) ([1a74321](https://github.com/croffasia/itsaplan/commit/1a743218fd0ff09714ee8acb71ccbc07b76483a2))
+* **runner:** add Pi and Oh My Pi unattended presets ([#421](https://github.com/croffasia/itsaplan/issues/421)) ([1956a14](https://github.com/croffasia/itsaplan/commit/1956a144551f87747d76e7a4a48b453918699546))
+
+
+### Improvements
+
+* load visible mobile link previews with backend caching ([#393](https://github.com/croffasia/itsaplan/issues/393)) ([f3bd992](https://github.com/croffasia/itsaplan/commit/f3bd992c000a5d5e5751bc95644e820cab941d93))
+* **web:** confirm before deleting an attachment ([#415](https://github.com/croffasia/itsaplan/issues/415)) ([2aa58ec](https://github.com/croffasia/itsaplan/commit/2aa58ec689704c7e26b94643a25ca522fd45dca8))
+* **web:** show subtask progress bar inline in the card header ([#419](https://github.com/croffasia/itsaplan/issues/419)) ([f063c5d](https://github.com/croffasia/itsaplan/commit/f063c5d7575c53d4cfa4523ff88f1dcf0145e919))
+* **web:** split Import/Export into tabs with a source picker ([#420](https://github.com/croffasia/itsaplan/issues/420)) ([e21d56d](https://github.com/croffasia/itsaplan/commit/e21d56d2413e5806a6823aca009ff2f244bc64d0))
+
+
+### Bug Fixes
+
+* **api:** bound issue texts and make the mention scan linear ([#353](https://github.com/croffasia/itsaplan/issues/353)) ([03ee5a8](https://github.com/croffasia/itsaplan/commit/03ee5a88b52a340828ab354706c06ddd33524807))
+* **charts:** use quay.io MinIO images in Helm chart values ([#405](https://github.com/croffasia/itsaplan/issues/405)) ([e55907e](https://github.com/croffasia/itsaplan/commit/e55907eb8b68fdc9acf237e35ddc9b937c5d40da))
+* **web:** keep dashboard overview accessible ([#385](https://github.com/croffasia/itsaplan/issues/385)) ([9bbf0aa](https://github.com/croffasia/itsaplan/commit/9bbf0aa81e49f03e094b56b65d28e9dc318743e5))
+* **web:** open description links on touch taps ([#391](https://github.com/croffasia/itsaplan/issues/391)) ([0110de8](https://github.com/croffasia/itsaplan/commit/0110de89e6fc1c21a85ebe33050b730f2ee558fa))
+* **web:** preserve touch scrolling in the project picker ([#416](https://github.com/croffasia/itsaplan/issues/416)) ([732ca67](https://github.com/croffasia/itsaplan/commit/732ca673d08d8c3a48c9f50ded7497d21dc3ae7e))
+* **web:** restore image annotation on new and existing issues ([#407](https://github.com/croffasia/itsaplan/issues/407)) ([63c41cd](https://github.com/croffasia/itsaplan/commit/63c41cd2aee6ead486c58d3ba9a308bfe309e162))
+
+
+### Chores
+
+* remove unused PR screenshots ([#418](https://github.com/croffasia/itsaplan/issues/418)) ([03868b7](https://github.com/croffasia/itsaplan/commit/03868b7b3664aefccf6cfd4d4aa5f7a0d673c168))
+
+## [1.0.0](https://github.com/croffasia/itsaplan/compare/v0.17.0...v1.0.0) (2026-09-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* group projects into teams ([#321](https://github.com/croffasia/itsaplan/issues/321))
+
+### Features
+
+* add Spanish es-ES localization ([#337](https://github.com/croffasia/itsaplan/issues/337)) ([ecc1f9e](https://github.com/croffasia/itsaplan/commit/ecc1f9e008bbf50755fd47b795d0c1365cbc97d6))
+* **api:** expose rename, delete and reorder checklist MCP tools ([#351](https://github.com/croffasia/itsaplan/issues/351)) ([77b7b4d](https://github.com/croffasia/itsaplan/commit/77b7b4dda6f2af465526ff9b07592696da6b54c0))
+* **api:** expose structured MCP results and retry metadata ([#368](https://github.com/croffasia/itsaplan/issues/368)) ([026b0f5](https://github.com/croffasia/itsaplan/commit/026b0f5caa24363f8b7771bae0dc5e790ce1b442))
+* attach files and link Docs to an initiative ([#328](https://github.com/croffasia/itsaplan/issues/328)) ([a08a7cf](https://github.com/croffasia/itsaplan/commit/a08a7cfa3f73ca040f0a9e5ffff102677904fd4e))
+* edit and delete comments on an issue ([#326](https://github.com/croffasia/itsaplan/issues/326)) ([5fe1462](https://github.com/croffasia/itsaplan/commit/5fe1462daaeb879a50da6456caac03bb7edc5322))
+* **god:** teams directory with a team detail panel ([#343](https://github.com/croffasia/itsaplan/issues/343)) ([c0188de](https://github.com/croffasia/itsaplan/commit/c0188de5bdd75f6f5f391cb3c7299f11fcc7d719))
+* group projects into teams ([#321](https://github.com/croffasia/itsaplan/issues/321)) ([39942a7](https://github.com/croffasia/itsaplan/commit/39942a74f4f2123e2c2fe32c68464590238366c4))
+* paste markdown into the editors ([#330](https://github.com/croffasia/itsaplan/issues/330)) ([c4f5cd0](https://github.com/croffasia/itsaplan/commit/c4f5cd0166fa15161a6c2e652552c5dd522c20d2))
+* preview public and internal links in Markdown editors ([#366](https://github.com/croffasia/itsaplan/issues/366)) ([f18e60e](https://github.com/croffasia/itsaplan/commit/f18e60ea5de58285e030ba95a76837f9797d64c8))
+* trust addresses from sign-in providers when linking accounts ([#342](https://github.com/croffasia/itsaplan/issues/342)) ([0fad29a](https://github.com/croffasia/itsaplan/commit/0fad29aaf390072899fd07e88b19aaf0f6dd131d))
+* **web:** add Indonesia as an interface language ([#363](https://github.com/croffasia/itsaplan/issues/363)) ([2dff3de](https://github.com/croffasia/itsaplan/commit/2dff3de37840387808d8390cbca0ebffce34e9a3))
+* **web:** add Portuguese (Brazil) as an interface language ([#334](https://github.com/croffasia/itsaplan/issues/334)) ([71f1e4f](https://github.com/croffasia/itsaplan/commit/71f1e4f42a1ec4050f8587934c3e680b911e3797))
+* **web:** create an initiative from the issue's initiative picker ([#322](https://github.com/croffasia/itsaplan/issues/322)) ([0f128e7](https://github.com/croffasia/itsaplan/commit/0f128e7f416527dda0f1024ab48081a1250fe63c))
+* **web:** create an initiative from the palette or a hotkey ([#329](https://github.com/croffasia/itsaplan/issues/329)) ([c38d121](https://github.com/croffasia/itsaplan/commit/c38d12196680822e5bd99f6d581fe6846623b905))
+* **web:** fold the subtasks under a card, row or timeline row ([#382](https://github.com/croffasia/itsaplan/issues/382)) ([d5e6b5b](https://github.com/croffasia/itsaplan/commit/d5e6b5bd670808d906b2b875b120b2fb637b8813))
+* **web:** open inbox issues as full pages ([#383](https://github.com/croffasia/itsaplan/issues/383)) ([f44fc14](https://github.com/croffasia/itsaplan/commit/f44fc14b8eb60ff84c18171bccbed14d3f8bcdc9))
+* **web:** security headers and disable x-powered-by ([#346](https://github.com/croffasia/itsaplan/issues/346)) ([160be7a](https://github.com/croffasia/itsaplan/commit/160be7a098ba1484c70632a5091c33761d11390a))
+* **web:** view and copy raw markdown of agent instructions ([#344](https://github.com/croffasia/itsaplan/issues/344)) ([78d9806](https://github.com/croffasia/itsaplan/commit/78d9806743cbd739e1ff80943b2550e0aa19aedf))
+
+
+### Improvements
+
+* page and search the team roles and projects lists ([#339](https://github.com/croffasia/itsaplan/issues/339)) ([39f7cbf](https://github.com/croffasia/itsaplan/commit/39f7cbf3361bb1bfae07eb3216e0e359437821cb))
+* **web:** show an empty state on every members tab ([#323](https://github.com/croffasia/itsaplan/issues/323)) ([742e43d](https://github.com/croffasia/itsaplan/commit/742e43dfd2e6682b3fc41c20fb5889bd96a5dd2f))
+
+
+### Bug Fixes
+
+* **api:** check column ownership before the WIP limit on bulk issue update ([#350](https://github.com/croffasia/itsaplan/issues/350)) ([8e33c04](https://github.com/croffasia/itsaplan/commit/8e33c04ece1a07903eb37fa1a0917bbd04a12382))
+* **api:** let only the creator delete a note board ([#348](https://github.com/croffasia/itsaplan/issues/348)) ([5edd3b4](https://github.com/croffasia/itsaplan/commit/5edd3b4e3b33d68e3329959d0826397b39f9c262))
+* **api:** scope a label's groupId to the project ([#349](https://github.com/croffasia/itsaplan/issues/349)) ([f7b0933](https://github.com/croffasia/itsaplan/commit/f7b09331bd63ec48c34742fbcacd6828288f5c96))
+* **api:** serialize team ownership changes ([#387](https://github.com/croffasia/itsaplan/issues/387)) ([5181d7b](https://github.com/croffasia/itsaplan/commit/5181d7b15b256b97c0430761219d216e5b898f9a))
+* **auth:** enforce email verification on sign-up ([#360](https://github.com/croffasia/itsaplan/issues/360)) ([50dfa20](https://github.com/croffasia/itsaplan/commit/50dfa20bebad7a815272e23925cc6b31730939dc))
+* **auth:** revoke sessions on password reset and expire API keys ([#358](https://github.com/croffasia/itsaplan/issues/358)) ([0e6e5b8](https://github.com/croffasia/itsaplan/commit/0e6e5b8b19d10addf6ed8fc2f39664a1e1eaad7b))
+* **db:** resolve the migration directory as a filesystem path ([#364](https://github.com/croffasia/itsaplan/issues/364)) ([0eb77d1](https://github.com/croffasia/itsaplan/commit/0eb77d110499f7c37212d9631231aabec2f8ffd4))
+* **net:** allow operators to trust named hosts that resolve privately ([#317](https://github.com/croffasia/itsaplan/issues/317)) ([257c817](https://github.com/croffasia/itsaplan/commit/257c817dba7644398767d886a61d78b08ad0c1b9))
+* **net:** send a User-Agent from pinnedFetch ([#332](https://github.com/croffasia/itsaplan/issues/332)) ([fa5a519](https://github.com/croffasia/itsaplan/commit/fa5a519ef6ed0c20995a3b570483a1343757151b))
+* reject an issue due date before its start date ([#325](https://github.com/croffasia/itsaplan/issues/325)) ([5bfb34e](https://github.com/croffasia/itsaplan/commit/5bfb34e7a5c4b5b01c36e15c00b9efc33ff12fe1))
+* restore MinIO image pulls through Quay ([#390](https://github.com/croffasia/itsaplan/issues/390)) ([05cbd45](https://github.com/croffasia/itsaplan/commit/05cbd45e16f0aeb17fbf6427eeb6ab9a843c2e72))
+* **web:** add missing Indonesian API key expiry strings ([#380](https://github.com/croffasia/itsaplan/issues/380)) ([5846063](https://github.com/croffasia/itsaplan/commit/5846063edfae107bb8adda4528cae43c27e62e8b))
+* **web:** add the missing Spanish start-subtasks-collapsed string ([#403](https://github.com/croffasia/itsaplan/issues/403)) ([660f90a](https://github.com/croffasia/itsaplan/commit/660f90aad4a327722a6d1ab6186d32dc8865fd53))
+* **web:** allowlist the img style attribute in the editor ([#347](https://github.com/croffasia/itsaplan/issues/347)) ([6ba7aa2](https://github.com/croffasia/itsaplan/commit/6ba7aa2de2bdd38ad69a7083958a397592404c40))
+* **web:** bump next to 16.3.4 for the image optimization advisories ([#345](https://github.com/croffasia/itsaplan/issues/345)) ([2bb130b](https://github.com/croffasia/itsaplan/commit/2bb130b06b16f57d7aaec536fdb85664a39c6988))
+* **web:** call AI agents agents, not teammates ([#335](https://github.com/croffasia/itsaplan/issues/335)) ([6cf6b83](https://github.com/croffasia/itsaplan/commit/6cf6b8380b2a5a0b67a429f4fb543210b84fbe41))
+* **web:** make note links clearly navigable ([#367](https://github.com/croffasia/itsaplan/issues/367)) ([6bf6106](https://github.com/croffasia/itsaplan/commit/6bf6106e0dc54aa6072fc04623b74f6a3277fcfa))
+* **web:** stop the redirect loop on a stale session cookie ([#319](https://github.com/croffasia/itsaplan/issues/319)) ([2e392a3](https://github.com/croffasia/itsaplan/commit/2e392a3f4c769a7e766358f55ce9e67a6e51a249))
+
+
+### Refactoring
+
+* replace the internal api routes with direct database access ([#373](https://github.com/croffasia/itsaplan/issues/373)) ([6c47619](https://github.com/croffasia/itsaplan/commit/6c4761964580f105db45c1b36a98dc3cd396805f))
+* share the editor and attachment parts between issues and initiatives ([#327](https://github.com/croffasia/itsaplan/issues/327)) ([b862e7f](https://github.com/croffasia/itsaplan/commit/b862e7f4defb862f026802df5f5d2af96e3057f9))
+* **web:** split the API client by domain ([#340](https://github.com/croffasia/itsaplan/issues/340)) ([620db84](https://github.com/croffasia/itsaplan/commit/620db84a041a24b344fa7edf92c473c22f212f9c))
+
+
+### Build
+
+* sync helm chart appVersion via release-please ([#338](https://github.com/croffasia/itsaplan/issues/338)) ([9f96ad9](https://github.com/croffasia/itsaplan/commit/9f96ad991014dfba69a978fb93995e595065ff63))
+
+
+### CI
+
+* audit dependencies in CI, drop dependabot ([#374](https://github.com/croffasia/itsaplan/issues/374)) ([fc084fc](https://github.com/croffasia/itsaplan/commit/fc084fcba6502d2c841f5b7dc7ad66901c1fb14b))
+
+
+### Chores
+
+* **deps:** refresh vulnerable dependencies, add npm scanning ([#359](https://github.com/croffasia/itsaplan/issues/359)) ([b196bfd](https://github.com/croffasia/itsaplan/commit/b196bfd6c7c3baedb8347cca6ced58135c08956c))
+
+## [0.17.0](https://github.com/croffasia/itsaplan/compare/v0.16.0...v0.17.0) (2026-09-06)
+
+
+### Features
+
+* add issue templates ([#267](https://github.com/croffasia/itsaplan/issues/267)) ([92ed56c](https://github.com/croffasia/itsaplan/commit/92ed56c2ccfdafa54204c4a21d7fc7b7e8903f7b))
+* add native OAuth MCP support ([#251](https://github.com/croffasia/itsaplan/issues/251)) ([8645306](https://github.com/croffasia/itsaplan/commit/86453066c32a5150521a2cd20e13238a321e983b))
+* add project Docs and watcher management ([#274](https://github.com/croffasia/itsaplan/issues/274)) ([740dbfd](https://github.com/croffasia/itsaplan/commit/740dbfd1e2db822bae81842bc58de5246eddb89d))
+* interactive setup for try it, develop, and env generation ([#314](https://github.com/croffasia/itsaplan/issues/314)) ([cdc8e15](https://github.com/croffasia/itsaplan/commit/cdc8e15052f6703d25a106bdaccac24ab296e7f9))
+* link and create pull requests from issues ([#279](https://github.com/croffasia/itsaplan/issues/279)) ([513d084](https://github.com/croffasia/itsaplan/commit/513d0842a5fdffca93e4b8e5d95c1179a792f971))
+* **web:** add French translation ([#270](https://github.com/croffasia/itsaplan/issues/270)) ([013a775](https://github.com/croffasia/itsaplan/commit/013a7758f1d34603372cf8dfcc39e95927913fc3))
+
+
+### Improvements
+
+* **web:** line tabs, borderless cards and clearer text on the MCP page ([#308](https://github.com/croffasia/itsaplan/issues/308)) ([fcfdcc7](https://github.com/croffasia/itsaplan/commit/fcfdcc7605047bcda82046bca15c569f0685827e))
+
+
+### Bug Fixes
+
+* **api:** answer 400 instead of 500 when an unauthenticated route gets malformed input ([#297](https://github.com/croffasia/itsaplan/issues/297)) ([22a9b6b](https://github.com/croffasia/itsaplan/commit/22a9b6b0d3fb5299902d31ed14bbd494033bf0d8))
+* **api:** apply the instance mcp default when a project is copied ([#291](https://github.com/croffasia/itsaplan/issues/291)) ([a010cb2](https://github.com/croffasia/itsaplan/commit/a010cb23b0cf2588f5530ca640e8239fda71e979))
+* **api:** bound the auto-archive day count ([#304](https://github.com/croffasia/itsaplan/issues/304)) ([e6ac5c2](https://github.com/croffasia/itsaplan/commit/e6ac5c291138a51104fc9e25099644fec5776657))
+* **api:** clear the failure counter when a webhook is switched back on ([#298](https://github.com/croffasia/itsaplan/issues/298)) ([927f471](https://github.com/croffasia/itsaplan/commit/927f471f37d78dafe686b83884bd14b6e4fd349a))
+* **api:** correct generated API documentation ([#277](https://github.com/croffasia/itsaplan/issues/277)) ([5501cee](https://github.com/croffasia/itsaplan/commit/5501ceeabf669f4e9b999eb12a8dd03236091864))
+* **api:** drop inbox notifications from projects the user left ([#310](https://github.com/croffasia/itsaplan/issues/310)) ([fcc477b](https://github.com/croffasia/itsaplan/commit/fcc477b86915c40d8b8714da09635727579e26cf))
+* **api:** keep a rejected option list from creating a field, and name the right permission ([#312](https://github.com/croffasia/itsaplan/issues/312)) ([7829a2f](https://github.com/croffasia/itsaplan/commit/7829a2f3ddc4c47364d824d8ea766855c2b536ab))
+* **api:** keep the failed statement out of error responses ([#311](https://github.com/croffasia/itsaplan/issues/311)) ([721cb18](https://github.com/croffasia/itsaplan/commit/721cb18dddbd1c07c2f1412465c2b534babe309e))
+* **api:** let a tool send the body its route requires ([#302](https://github.com/croffasia/itsaplan/issues/302)) ([10daff5](https://github.com/croffasia/itsaplan/commit/10daff5eb08f3fc69462c66605f6cb9fd7099221))
+* **api:** reject a date that is not a calendar day ([#303](https://github.com/croffasia/itsaplan/issues/303)) ([ddb5f10](https://github.com/croffasia/itsaplan/commit/ddb5f10f636d3d38f730ba556e01b0391e9d4d46))
+* **api:** validate every date that reaches a date column ([#307](https://github.com/croffasia/itsaplan/issues/307)) ([e4ad867](https://github.com/croffasia/itsaplan/commit/e4ad867c9b61cfda42ecd5a448baf90d3c5c465f))
+* **git:** attach post-merge release pipelines ([#275](https://github.com/croffasia/itsaplan/issues/275)) ([ad895a4](https://github.com/croffasia/itsaplan/commit/ad895a4c12895c68cb45e41dd89fb5a8841abbe7))
+* pin the resolved address for server-side fetches and reject IPv4-mapped private addresses ([#313](https://github.com/croffasia/itsaplan/issues/313)) ([13cff40](https://github.com/croffasia/itsaplan/commit/13cff40f11a8e0837e3d163f4c9e538bc120fbe0))
+* **web:** judge a click that follows no press on its own target ([#300](https://github.com/croffasia/itsaplan/issues/300)) ([94b5f77](https://github.com/croffasia/itsaplan/commit/94b5f7712ed8cd46f909992bcaf0aa69fdc3a856))
+* **web:** keep note links readable in dark mode ([#290](https://github.com/croffasia/itsaplan/issues/290)) ([7f4bf19](https://github.com/croffasia/itsaplan/commit/7f4bf198242c4ecf9031fcfc8815e8e027cebbfa))
+* **web:** keep the board scrollable while the issue detail panel is open ([#288](https://github.com/croffasia/itsaplan/issues/288)) ([1ebac8a](https://github.com/croffasia/itsaplan/commit/1ebac8a6e0240112d51c05a12232821fd8cb5ed7))
+* **web:** open the issue a click asks for instead of closing the panel ([#301](https://github.com/croffasia/itsaplan/issues/301)) ([c4b5b61](https://github.com/croffasia/itsaplan/commit/c4b5b6125230d1138486013ab862006f774f58b9))
+* **web:** open the issue every card and row click asks for ([#309](https://github.com/croffasia/itsaplan/issues/309)) ([6f0647d](https://github.com/croffasia/itsaplan/commit/6f0647dfdddf8f75fa90f78aeeb115503986a781))
+* **web:** stop a description saving itself when nobody edited it ([#295](https://github.com/croffasia/itsaplan/issues/295)) ([52c16e5](https://github.com/croffasia/itsaplan/commit/52c16e59c34800e71fd67cf14e6a421a2bfdd064))
+
+
+### Documentation
+
+* scope initiatives to a project in the feature list ([#292](https://github.com/croffasia/itsaplan/issues/292)) ([ca95f4c](https://github.com/croffasia/itsaplan/commit/ca95f4ce3b976f633ddc0a5414c6180d857594c9))
+
+
+### Build
+
+* **web:** stop next dev from writing into apps/web/AGENTS.md ([#293](https://github.com/croffasia/itsaplan/issues/293)) ([593b532](https://github.com/croffasia/itsaplan/commit/593b532f012f359164b3ce8e8427a851fcf6105f))
+
+## [0.16.0](https://github.com/croffasia/itsaplan/compare/v0.15.0...v0.16.0) (2026-08-31)
+
+
+### Features
+
+* add email provider test ([#260](https://github.com/croffasia/itsaplan/issues/260)) ([296158b](https://github.com/croffasia/itsaplan/commit/296158b8962e24338eb0fa6b73c080ba6fc08a2a))
+* add generic OIDC sign-in, SCIM 2.0 provisioning, and a password-auth switch ([#250](https://github.com/croffasia/itsaplan/issues/250)) ([c21728d](https://github.com/croffasia/itsaplan/commit/c21728d400fca1965ae65e048d49408b928e15a3))
+* add Helm chart for Kubernetes deployments ([#268](https://github.com/croffasia/itsaplan/issues/268)) ([039b719](https://github.com/croffasia/itsaplan/commit/039b719cf9bcfff14c469bbfceeda823f037dfad))
+* add native Git connections and development status ([#259](https://github.com/croffasia/itsaplan/issues/259)) ([f3770ec](https://github.com/croffasia/itsaplan/commit/f3770ec51d1aa02396bee7e059181e5eac8272d7))
+* **agent-tools:** add Gitea tools for AI agents ([#225](https://github.com/croffasia/itsaplan/issues/225)) ([8e1afbf](https://github.com/croffasia/itsaplan/commit/8e1afbf3d837066529beb1d07c966c7d1c1b9053))
+* **api:** expose checklist routes as MCP tools ([#229](https://github.com/croffasia/itsaplan/issues/229)) ([c2317f7](https://github.com/croffasia/itsaplan/commit/c2317f7dfc7527af31e225b1fbac53026796cf37))
+* **api:** pass the project description to agents and cap it at 2000 characters ([#244](https://github.com/croffasia/itsaplan/issues/244)) ([7035ffc](https://github.com/croffasia/itsaplan/commit/7035ffca78d040917e57bb0fdde5ca977ce7d3c7))
+* attach PDF, markdown, and text files in the agent chat ([#243](https://github.com/croffasia/itsaplan/issues/243)) ([0b6dca2](https://github.com/croffasia/itsaplan/commit/0b6dca2149e99e350e58a190865cd03d483af857))
+* **god:** instance setting mcpEnabled as enabled by default ([#227](https://github.com/croffasia/itsaplan/issues/227)) ([7d680ae](https://github.com/croffasia/itsaplan/commit/7d680aeea22607e017ad39ade9ce55c94f7573dc))
+* import issues from files via agent chat ([#228](https://github.com/croffasia/itsaplan/issues/228)) ([4efbdf1](https://github.com/croffasia/itsaplan/commit/4efbdf16b243ef292db64ced497ad99011a70fca))
+* mark issue import rows that will be skipped and review every row ([#245](https://github.com/croffasia/itsaplan/issues/245)) ([6bd61af](https://github.com/croffasia/itsaplan/commit/6bd61af4cde36ea18006b9c6f161f3e581cc960f))
+* search the agent chat history and star conversations ([#248](https://github.com/croffasia/itsaplan/issues/248)) ([6334a9c](https://github.com/croffasia/itsaplan/commit/6334a9c345f4f7c5b3b2cf240786a332e4d7ac83))
+* send project invitation emails ([#261](https://github.com/croffasia/itsaplan/issues/261)) ([f47c94f](https://github.com/croffasia/itsaplan/commit/f47c94f45035cf31fc04b1af6aae7d7d7fcb07af))
+* show the context size of agent chats and runs ([#241](https://github.com/croffasia/itsaplan/issues/241)) ([80694ba](https://github.com/croffasia/itsaplan/commit/80694baf8cb3f98b20fee0ef9ceb680c36e418e4))
+
+
+### Improvements
+
+* **web:** show clickable parent key on subtask cards and rows ([#231](https://github.com/croffasia/itsaplan/issues/231)) ([06b50e4](https://github.com/croffasia/itsaplan/commit/06b50e4fd5b1065f32c577d3769475ab59afe7b3))
+
+
+### Bug Fixes
+
+* **auth:** preserve a usable sign-in method ([#263](https://github.com/croffasia/itsaplan/issues/263)) ([8e2adba](https://github.com/croffasia/itsaplan/commit/8e2adba2b5f6cb3fe32fedfb8011b78fe5cc1551))
+* exclude the Helm chart from Prettier ([#269](https://github.com/croffasia/itsaplan/issues/269)) ([841b9ce](https://github.com/croffasia/itsaplan/commit/841b9cedd34150301ac9538c458ad487950a7433))
+* **scim:** apply group writes atomically ([#264](https://github.com/croffasia/itsaplan/issues/264)) ([54e8bdf](https://github.com/croffasia/itsaplan/commit/54e8bdfc470254df6e5d7c5d59949752dfbce778))
+* **web:** avoid duplicate Tiptap link extension ([#262](https://github.com/croffasia/itsaplan/issues/262)) ([87fbf97](https://github.com/croffasia/itsaplan/commit/87fbf976c46fac881500104fb2809d3f1cf4475a))
+* **web:** generate uuids without crypto.randomUUID over plain http ([#160](https://github.com/croffasia/itsaplan/issues/160)) ([0a255be](https://github.com/croffasia/itsaplan/commit/0a255bea76121724b9f2e1502baa420bd7113095))
+* **web:** hide the chat history for an agent that keeps no memory ([#242](https://github.com/croffasia/itsaplan/issues/242)) ([d4a913d](https://github.com/croffasia/itsaplan/commit/d4a913d801af61bde813b36bcf85c6b1fe6a0399))
+* **web:** keep relative timestamps current ([#254](https://github.com/croffasia/itsaplan/issues/254)) ([e30fac0](https://github.com/croffasia/itsaplan/commit/e30fac07d6e9cb9569acee3eec96c063ddf83dde))
+* **web:** preserve activated row during history scroll restoration ([#252](https://github.com/croffasia/itsaplan/issues/252)) ([64bb58d](https://github.com/croffasia/itsaplan/commit/64bb58d74db28b745280a414b230de835f154b14))
+* **web:** restore issue scroll position on browser history ([#247](https://github.com/croffasia/itsaplan/issues/247)) ([b82167a](https://github.com/croffasia/itsaplan/commit/b82167af6b390cce49fda193fa52cfb4fa58702f))
+* **web:** stack dashboard widgets into two columns on narrow screens ([#232](https://github.com/croffasia/itsaplan/issues/232)) ([5932db4](https://github.com/croffasia/itsaplan/commit/5932db4ae4b055f9b1f9c25082a85061bcb0fe26))
+* **web:** translate and tighten the god general settings strings ([#238](https://github.com/croffasia/itsaplan/issues/238)) ([70465b5](https://github.com/croffasia/itsaplan/commit/70465b54d826d72820ece9b2f3042b9c316e4790))
+
+
+### Documentation
+
+* rework the readme intro, features, and support sections ([#240](https://github.com/croffasia/itsaplan/issues/240)) ([a14a940](https://github.com/croffasia/itsaplan/commit/a14a940cee218d678e56150f2c13a6173f602446))
+* run the Railway template from the published images ([#221](https://github.com/croffasia/itsaplan/issues/221)) ([5f19963](https://github.com/croffasia/itsaplan/commit/5f19963157260db4634999c253ac15d19dd5d6a7))
+
+
+### Build
+
+* **deps:** bump bun to 1.4.0 and node to 24-alpine ([#239](https://github.com/croffasia/itsaplan/issues/239)) ([38891c9](https://github.com/croffasia/itsaplan/commit/38891c90f8b6f0cf3dfd3e6b5a42bbc3155cb774))
+
+
+### Chores
+
+* **runner:** bump version to 0.5.0 ([#249](https://github.com/croffasia/itsaplan/issues/249)) ([184c4c1](https://github.com/croffasia/itsaplan/commit/184c4c13f446837caf01fa7fc107e80f45b404d0))
+
 ## [0.15.0](https://github.com/croffasia/itsaplan/compare/v0.14.0...v0.15.0) (2026-08-24)
 
 

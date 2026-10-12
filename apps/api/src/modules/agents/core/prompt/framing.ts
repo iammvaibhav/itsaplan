@@ -1,5 +1,6 @@
 import { peoplePreamble, type Person } from './run-context';
 import { parseMentionHandles } from '#shared/mentions';
+import { PROJECT_DESCRIPTION_LIMIT } from '#modules/projects/model';
 import type { AgentRunTrigger } from '../../model';
 
 // Frames a triggered run into the text an agent receives: the framed user
@@ -7,8 +8,8 @@ import type { AgentRunTrigger } from '../../model';
 // (runModePreamble) and the people involved (peopleContext). The interactive test
 // chat does not use this path — it frames its own prompt in the controller.
 
-// The fields of a claimed run this module reads. The HTTP body in internal-routes.ts
-// is structurally compatible.
+// The fields of a claimed run this module reads, as both the queue poller and the
+// external runner build them.
 export interface RunForPrompt {
   id: number;
   trigger: AgentRunTrigger;
@@ -17,19 +18,18 @@ export interface RunForPrompt {
   issueIdentifier: string | null;
   issueTitle: string | null;
   // The issue's assignee and, on a mention run, the author of the comment behind it:
-  // the name they are called by and the handle they are tagged by. The handles are
-  // optional so a worker still running the previous build can hand a run over.
+  // the name they are called by and the handle they are tagged by.
   assigneeName: string | null;
-  assigneeUsername?: string | null;
+  assigneeUsername: string | null;
   requesterName: string | null;
-  requesterUsername?: string | null;
+  requesterUsername: string | null;
   agentUserId: string;
-  agentUsername?: string | null;
-  // The comment the mention replies to and the ones above it, oldest first. Absent
-  // for a top-level mention.
-  threadContext?: string | null;
+  agentUsername: string | null;
+  // The comment the mention replies to and the ones above it, oldest first. Null for
+  // a top-level mention.
+  threadContext: string | null;
   // The comment that mentioned the agent, so it can answer in the same thread.
-  sourceActivityId?: number | null;
+  sourceActivityId: number | null;
 }
 
 // System-instruction block describing how this run was started, so the agent knows
@@ -59,38 +59,58 @@ export function framePrompt(run: RunForPrompt): string {
   if (run.trigger === 'schedule' || run.trigger === 'manual') {
     return `Carry out the following task:\n\n${run.prompt}`;
   }
+  if (run.trigger === 'status' || run.trigger === 'event' || run.trigger === 'field') {
+    return frameIssueTask(run);
+  }
   const ref = run.issueIdentifier ?? `#${run.issueId}`;
   const titled = run.issueTitle ? `${ref} "${run.issueTitle}"` : ref;
   return run.trigger === 'delegation' ? frameDelegation(run, titled) : frameMention(run, titled);
 }
 
 function frameDelegation(run: RunForPrompt, titled: string): string {
-  const lines = [
+  return [
     `Issue ${titled} of your project has been delegated to you. Carry it out.`,
     'Read the issue for context, then do the work it needs with your tools. Add a',
     'question comment only when you genuinely cannot proceed without a human answer.',
-  ];
-  if (run.assigneeUsername) {
-    lines.push(
-      '',
-      'Whenever you comment on this issue, tag the responsible assignee',
-      `@${run.assigneeUsername} so they are notified.`,
-    );
-  } else {
-    lines.push(
-      '',
-      'This issue has no assignee. Before you comment, call get_project and read',
-      "the members' descriptions; tag the one member whose role best fits this work. If",
-      'none clearly fits, tag a project owner. Tag exactly one person.',
-    );
-  }
-  lines.push(
+    ...assigneeLines(run),
     '',
     'When you are done, add a comment to the issue with the add_comment tool',
     `(issueId ${run.issueId}) describing what you did, and set the issue's status with`,
     'the update_issue tool. Do not mention yourself.',
-  );
-  return lines.join('\n');
+  ].join('\n');
+}
+
+// The run's prompt already names the issue and what put the agent on it: the member field
+// it was set into, or what happened to the issue followed by the schedule's task.
+// Moving the issue on is left to that task: a status schedule is often one step of
+// several, each started by the column before it.
+function frameIssueTask(run: RunForPrompt): string {
+  return [
+    run.prompt,
+    '',
+    'Read the issue for context, then carry out the task above with your tools. Add a',
+    'question comment only when you genuinely cannot proceed without a human answer.',
+    ...assigneeLines(run),
+    '',
+    'When you are done, add a comment to the issue with the add_comment tool',
+    `(issueId ${run.issueId}) describing what you did. Do not mention yourself.`,
+  ].join('\n');
+}
+
+function assigneeLines(run: RunForPrompt): string[] {
+  if (run.assigneeUsername) {
+    return [
+      '',
+      'Whenever you comment on this issue, tag the responsible assignee',
+      `@${run.assigneeUsername} so they are notified.`,
+    ];
+  }
+  return [
+    '',
+    'This issue has no assignee. Before you comment, call get_project and read',
+    "the members' descriptions; tag the one member whose role best fits this work. If",
+    'none clearly fits, tag a project owner. Tag exactly one person.',
+  ];
 }
 
 function frameMention(run: RunForPrompt, titled: string): string {
@@ -129,12 +149,48 @@ function frameMention(run: RunForPrompt, titled: string): string {
 // A leading system-instruction block naming the project the agent works in. Grounds
 // every run — the test chat, the issue-triggered runs, and the ones a runner executes
 // — so the agent knows which project its tools act on and how issue keys are formed.
-export function projectPreamble(project: { key: string; name: string }): string {
+export function projectPreamble(project: {
+  key: string;
+  name: string;
+  description: string;
+}): string {
+  const description = project.description.trim().slice(0, PROJECT_DESCRIPTION_LIMIT);
   return [
     '## Current project',
     `You are working in the project "${project.name}" (key ${project.key}). All your`,
     `work-item tools act on this project only, and its issues are addressed by keys`,
     `like ${project.key}-123.`,
+    ...(description ? ['', description] : []),
+    '',
+    '',
+  ].join('\n');
+}
+
+// The projects an agent works in, for a path with no single one of its own: a chat is
+// held with the agent, not inside a project, so it names every project the agent
+// reaches and the key each is addressed by.
+export function projectsPreamble(
+  projects: { key: string; name: string; description: string }[],
+): string {
+  if (projects.length === 0) {
+    return [
+      '## Projects',
+      'You work in no project yet. Your work-item tools reach nothing until someone',
+      'attaches you to one.',
+      '',
+      '',
+    ].join('\n');
+  }
+  if (projects.length === 1) return projectPreamble(projects[0]);
+  return [
+    '## Projects',
+    'You work in these projects. A work-item tool takes the key of the one to act in,',
+    'and its issues are addressed by keys like KEY-123.',
+    '',
+    ...projects.map((p) => {
+      const description = p.description.trim().slice(0, PROJECT_DESCRIPTION_LIMIT);
+      return `- ${p.key} — "${p.name}"${description ? `: ${description}` : ''}`;
+    }),
     '',
     '',
   ].join('\n');
@@ -154,6 +210,18 @@ export function chartPreamble(): string {
     '```',
     '',
     'The block holds the spec and nothing else — the app draws it as the chart.',
+    '',
+    '',
+  ].join('\n');
+}
+
+// Only the chat paths carry this: a file is attached to a chat message, so an
+// autonomous run never meets the marker.
+export function attachmentPreamble(): string {
+  return [
+    '## Attached files',
+    'A [file: "name" (attachment id: …)] marker in the person\'s message means they attached',
+    'that file. Read it with the read_chat_attachment tool.',
     '',
     '',
   ].join('\n');

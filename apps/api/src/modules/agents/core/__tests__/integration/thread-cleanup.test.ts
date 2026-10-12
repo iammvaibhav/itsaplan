@@ -5,10 +5,12 @@ import { authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { ensureThread, buildMemory } from '../../runtime/memory';
+import { createAgent } from '#tests/helpers/agents';
 
 // Agent conversation threads live in Mastra's tables, which carry no foreign key of
 // ours, so they are deleted explicitly when what they are bound to goes away: the
-// agent, its project, or (for an issue run's thread) the issue being archived.
+// agent, its project, or the schedule. Archiving an issue is reversible and drops
+// none of them.
 //
 // The runtime is not exercised — a live model call would be needed to produce a thread
 // — so threads are seeded through the memory module the same way a run creates them.
@@ -16,15 +18,16 @@ import { ensureThread, buildMemory } from '../../runtime/memory';
 async function setup() {
   const owner = await signUpTestUser({ name: 'Owner' });
   const asOwner = authedApi(owner.cookie);
-  await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
+  const project = await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
   const view = await asOwner.projects({ projectKey: 'MKT' }).get();
-  return { owner, asOwner, columnId: view.data!.columns[0].id };
+  return { owner, asOwner, columnId: view.data!.columns[0].id, teamId: project.data!.teamId };
 }
 
-const agents = (api: Api) => api.projects({ projectKey: 'MKT' })['ai-agents'];
+// The agent routes of the team the project belongs to, which is where agents live.
+const agents = (api: Api, teamId: number) => api.teams({ teamId })['ai-agents'];
 
 async function createInternalAgent(asOwner: Api, name: string, username: string) {
-  const res = await agents(asOwner).post({ name, username, kind: 'internal' });
+  const res = await createAgent(asOwner, 'MKT', { name, username, kind: 'internal' });
   return res.data!.agent;
 }
 
@@ -36,33 +39,36 @@ async function createIssue(asOwner: Api, columnId: number, title: string) {
 async function seedChatThread(
   threadId: string,
   resourceId: string,
-  agent: { id: number; projectId: number },
+  agent: { id: number; projects: { id: number }[] },
 ) {
   await ensureThread(
     threadId,
     resourceId,
-    { agentId: agent.id, projectId: agent.projectId, kind: 'chat' },
+    { agentId: agent.id, projectId: agent.projects[0].id, kind: 'chat' },
     'chat',
   );
 }
 
-async function seedIssueThread(agent: { id: number; projectId: number }, issueId: number) {
+async function seedIssueThread(agent: { id: number; projects: { id: number }[] }, issueId: number) {
   const threadId = `issue:${issueId}:${agent.id}`;
   await ensureThread(
     threadId,
     'agent-bot',
-    { agentId: agent.id, projectId: agent.projectId, kind: 'run', issueId },
+    { agentId: agent.id, projectId: agent.projects[0].id, kind: 'run', issueId },
     'run',
   );
   return threadId;
 }
 
-async function seedScheduleThread(agent: { id: number; projectId: number }, scheduleId: number) {
+async function seedScheduleThread(
+  agent: { id: number; projects: { id: number }[] },
+  scheduleId: number,
+) {
   const threadId = `schedule:${scheduleId}`;
   await ensureThread(
     threadId,
     'agent-bot',
-    { agentId: agent.id, projectId: agent.projectId, kind: 'run', scheduleId },
+    { agentId: agent.id, projectId: agent.projects[0].id, kind: 'run', scheduleId },
     'run',
   );
   return threadId;
@@ -106,7 +112,7 @@ describe('agent thread cleanup', () => {
   });
 
   it("deletes an agent's chat and run threads with their messages", async () => {
-    const { owner, asOwner, columnId } = await setup();
+    const { owner, asOwner, columnId, teamId } = await setup();
     const agent = await createInternalAgent(asOwner, 'Design Bot', 'design');
     const other = await createInternalAgent(asOwner, 'Other Bot', 'other');
     const issue = await createIssue(asOwner, columnId, 'Ship it');
@@ -116,7 +122,7 @@ describe('agent thread cleanup', () => {
     expect(await messageCount(runThread)).toBe(1);
     await seedChatThread(`chat:${other.id}:${owner.userId}:t1`, owner.userId, other);
 
-    const res = await agents(asOwner)({ agentId: agent.id }).delete();
+    const res = await agents(asOwner, teamId)({ agentId: agent.id }).delete();
     expect(res.status).toBe(204);
 
     expect(await threadExists(`chat:${agent.id}:${owner.userId}:t1`)).toBe(false);
@@ -161,24 +167,20 @@ describe('agent thread cleanup', () => {
     expect(await messageCount(thread)).toBe(0);
   });
 
-  it("deletes an issue's run threads when it is archived", async () => {
+  it("keeps an issue's run threads when it is archived", async () => {
     const { asOwner, columnId } = await setup();
     const a = await createInternalAgent(asOwner, 'Bot A', 'bota');
     const b = await createInternalAgent(asOwner, 'Bot B', 'botb');
     const issue = await createIssue(asOwner, columnId, 'Ship it');
-    const other = await createIssue(asOwner, columnId, 'Keep it');
     const threadA = await seedIssueThread(a, issue.id);
     const threadB = await seedIssueThread(b, issue.id);
     await seedMessage(threadA, 'agent-bot');
-    expect(await messageCount(threadA)).toBe(1);
-    const untouched = await seedIssueThread(a, other.id);
 
     const res = await asOwner.issues({ issueId: issue.id }).archive.post();
     expect(res.status).toBe(200);
 
-    expect(await threadExists(threadA)).toBe(false);
-    expect(await threadExists(threadB)).toBe(false);
-    expect(await messageCount(threadA)).toBe(0);
-    expect(await threadExists(untouched)).toBe(true);
+    expect(await threadExists(threadA)).toBe(true);
+    expect(await threadExists(threadB)).toBe(true);
+    expect(await messageCount(threadA)).toBe(1);
   });
 });

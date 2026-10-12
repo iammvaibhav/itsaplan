@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { type IssueType, type ProjectDetail } from '@/lib/api';
+import type { IssueType } from '@/lib/api/endpoints/issueTypes';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import { DEFAULT_COLOR } from '@/utils/project';
 import { colorDot } from '@/components/common/fields/colorDot';
 import { Button } from '@/components/ui/button';
@@ -45,9 +46,9 @@ export default function SettingsIssueTypes({
   const t = useTranslations('settings.issueTypes');
   const tCommon = useTranslations('common');
   const can = useSettingsCan();
-  const createIssueType = useCreateIssueType(project.project.key);
-  const updateIssueType = useUpdateIssueType(project.project.key);
-  const deleteIssueType = useDeleteIssueType(project.project.key);
+  const createIssueType = useCreateIssueType(project.project.ref);
+  const updateIssueType = useUpdateIssueType(project.project.ref);
+  const deleteIssueType = useDeleteIssueType(project.project.ref);
 
   const types = project.issueTypes;
   const issueCount = (typeId: number) =>

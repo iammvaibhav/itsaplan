@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { db, aiAgent, apikey, projectMember } from '@repo/db';
+import { db, aiAgent, apikey, teamMember } from '@repo/db';
 import { eq } from 'drizzle-orm';
 import { authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
-import { getProjectByKey } from '#modules/projects/service';
+import { getProjectByRef } from '#modules/projects/service';
 import { getAgentById, getInternalAgentApiKey } from '../../service';
-import { buildRouteTools } from '../../runtime/tools/route-tools';
+import { actionCatalog, buildRouteTools } from '../../runtime/tools/route-tools';
 import { AGENT_ACTIONS, ALWAYS_ON_ACTIONS } from '../../runtime/tools/catalog';
 import { routeTools } from '#mcp/generate';
 import { getMcpApp } from '#mcp/app-ref';
+import { createRole } from '#tests/helpers/roles';
+import { createAgent, setAgentProjectRole } from '#tests/helpers/agents';
 
 // The tools an internal agent runs with, built from the routes tagged mcpTool() and
 // dispatched in process with the agent's own API key. What is asserted here is the
@@ -18,29 +20,33 @@ import { getMcpApp } from '#mcp/app-ref';
 // project is bound rather than supplied by the model, and that the agent's project
 // role is enforced.
 
-const agents = (api: Api) => api.projects({ projectKey: 'MKT' })['ai-agents'];
+// The agent routes of the team the project belongs to, which is where agents live.
+const agents = (api: Api, teamId: number) => api.teams({ teamId })['ai-agents'];
 
 async function setup() {
   const owner = await signUpTestUser({ name: 'Owner' });
   const asOwner = authedApi(owner.cookie);
-  await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
-  return { owner, asOwner };
+  const project = await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
+  return { owner, asOwner, teamId: project.data!.teamId };
 }
 
 // Builds the tool set of a freshly created internal agent, the way the runtime does.
-// The username only has to be unique, so it is numbered.
+// The username only has to be unique, so it is numbered. A roleId puts the agent's
+// membership of MKT on that role, which is what its calls are then checked against.
 let agentSeq = 0;
 async function toolsFor(asOwner: Api, tools: string[], roleId?: number) {
-  const created = await agents(asOwner).post({
+  const created = await createAgent(asOwner, 'MKT', {
     name: 'Triage Bot',
     username: `triage-${++agentSeq}`,
     kind: 'internal',
     tools,
-    ...(roleId === undefined ? {} : { roleId }),
   });
   const agentId = created.data?.agent.id;
   if (agentId === undefined) throw new Error('Test agent was not created');
-  const project = await getProjectByKey('MKT');
+  if (roleId !== undefined) {
+    await setAgentProjectRole(asOwner, 'MKT', created.data!.agent.userId, roleId);
+  }
+  const project = await getProjectByRef('MKT', '');
   if (!project) throw new Error('Test project was not created');
   const agent = await getAgentById(agentId, project.id);
   if (!agent) throw new Error('Test agent was not found');
@@ -154,26 +160,49 @@ describe('internal agent route tools', () => {
     }
   });
 
+  // The catalog states which role an action needs, which it can only do when it
+  // carries the permission the route behind the action asserts.
+  it('reports the permission of the route behind each action', () => {
+    const catalog = new Map(actionCatalog().map((action) => [action.key, action.permission]));
+
+    // A route guarded by the permission macro, and one guarded by an entity guard,
+    // which names the action alone.
+    expect(catalog.get('create_issue')).toEqual(['work_items', 'create']);
+    expect(catalog.get('update_issue')).toEqual(['work_items', 'edit']);
+    // Asserts its permission in the handler and states the same pair in its detail.
+    expect(catalog.get('get_issue')).toEqual(['work_items', 'read']);
+
+    // Everything else has one. prepare_issue_import and get_current_date have no
+    // route; charts and the project itself are open to any member of the project.
+    expect([...catalog].filter(([, permission]) => !permission).map(([key]) => key)).toEqual([
+      'prepare_issue_import',
+      'create_chart',
+      'get_current_date',
+      'get_project',
+    ]);
+  });
+
   it("provisions a legacy agent's key once, even when two runs start together", async () => {
-    const { asOwner } = await setup();
-    const created = await agents(asOwner).post({
+    const { asOwner, teamId } = await setup();
+    const created = await createAgent(asOwner, 'MKT', {
       name: 'Legacy Bot',
       username: 'legacy',
       kind: 'internal',
     });
     const agentId = created.data?.agent.id;
-    const project = await getProjectByKey('MKT');
+    const project = await getProjectByRef('MKT', '');
     if (agentId === undefined || !project) throw new Error('Test agent was not created');
 
-    // An agent from before the key existed: no stored secret, no membership.
+    // An agent from before the key existed: no stored secret, and no place in the
+    // team's member list.
     await db
       .update(aiAgent)
       .set({ apiKeyCiphertext: null, apiKeyIv: null, apiKeyAuthTag: null })
       .where(eq(aiAgent.id, agentId));
     await db.delete(apikey).where(eq(apikey.referenceId, created.data!.agent.userId));
-    await db.delete(projectMember).where(eq(projectMember.userId, created.data!.agent.userId));
+    await db.delete(teamMember).where(eq(teamMember.userId, created.data!.agent.userId));
 
-    const agent = await getAgentById(agentId, project.id);
+    const agent = await getAgentById(agentId, teamId);
     if (!agent) throw new Error('Test agent was not found');
 
     // Two runs of the same agent race to provision it.
@@ -189,20 +218,20 @@ describe('internal agent route tools', () => {
     expect(keys).toHaveLength(1);
 
     // The listing still shows the agent once, and the key works against a real route.
-    const listed = await agents(asOwner).get();
+    const listed = await agents(asOwner, teamId).get();
     expect(listed.data?.filter((a) => a.id === agentId)).toHaveLength(1);
     const tools = buildRouteTools(project, first, agent.tools);
     expect(await run(tools, 'get_project')).toMatchObject({ columns: expect.any(Array) });
   });
 
-  it("enforces the agent's project role: a forbidden action returns the route's error", async () => {
+  it("enforces the agent's role: a forbidden action returns the route's error", async () => {
     const { asOwner } = await setup();
     const view = await asOwner.projects({ projectKey: 'MKT' }).get();
     const columnId = view.data?.columns[0]?.id;
     if (columnId === undefined) throw new Error('Test project has no columns');
 
     // A role that may read work items but not create them.
-    const role = await asOwner.projects({ projectKey: 'MKT' }).roles.post({
+    const role = await createRole(asOwner, 'MKT', {
       name: 'Read only',
       permissions: { work_items: { create: false, edit: false, read: true, delete: false } },
     });

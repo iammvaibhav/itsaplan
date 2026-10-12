@@ -2,6 +2,7 @@ import {
   db,
   issue,
   projectColumn,
+  projectMember,
   issueActivity,
   issueType,
   user,
@@ -9,10 +10,12 @@ import {
   agentRun,
   webhook,
   webhookDelivery,
+  initiative,
   type ActivityPayload,
 } from '@repo/db';
 import { and, desc, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
-import { iso } from '#shared/lib';
+import { HttpError, iso } from '#shared/lib';
+import type { AgentRunTrigger } from '#modules/agents/model';
 
 // Read-only project metrics for the dashboards feature. Every figure is derived
 // from the existing issue / project_column / issue_activity / issue_status tables —
@@ -269,6 +272,7 @@ export async function getPulse(
   projectId: number,
   unit: PulseUnit,
   columns: number,
+  actorUserId?: string,
 ): Promise<PulseBucket[]> {
   const u = PULSE_UNIT[unit];
   // Both branches yield exactly columns*rows buckets. Aligned: start at the super
@@ -283,17 +287,19 @@ export async function getPulse(
         start: `date_trunc('${u.trunc}', now()) - make_interval(${u.baseField} => ${columns * u.rows - 1})`,
         end: `date_trunc('${u.trunc}', now())`,
       };
-  const q = `
+  const q = sql`${sql.raw(`
     SELECT to_char(s.bucket, '${u.fmt}') AS label,
            COALESCE(count(a.id), 0)::int AS count
     FROM generate_series(${range.start}, ${range.end}, interval '1 ${u.trunc}') AS s(bucket)
     LEFT JOIN issue_activity a
       ON date_trunc('${u.trunc}', a.created_at) = s.bucket
       AND a.issue_id IN (SELECT id FROM issue WHERE project_id = ${projectId})
+  `)}
+    ${actorUserId == null ? sql`` : sql`AND a.actor_user_id = ${actorUserId}`}
     GROUP BY s.bucket
     ORDER BY s.bucket
   `;
-  const rows = (await db.execute(sql.raw(q))) as unknown as { label: string; count: number }[];
+  const rows = (await db.execute(q)) as unknown as { label: string; count: number }[];
   return rows.map((r) => ({ label: r.label, count: Number(r.count) }));
 }
 
@@ -329,6 +335,177 @@ export async function getThroughput(projectId: number, weeks: number): Promise<T
      GROUP BY e.week
      ORDER BY e.week`)) as unknown as ThroughputWeek[];
   return rows.map((r) => ({ week: r.week, created: Number(r.created), closed: Number(r.closed) }));
+}
+
+// --- Burnup (scope / started / completed per day, with a forecast) ---------------
+
+export interface BurnupDay {
+  date: string;
+  scope: number;
+  started: number;
+  completed: number;
+}
+
+export interface BurnupForecast {
+  windowDays: number;
+  velocityPerDay: number;
+  // The scope's growth rate over the same window, never negative: cancellations
+  // are not a trend.
+  scopeGrowthPerDay: number;
+  remaining: number;
+  // The scope the projection ends at: today's plus the issues expected to appear,
+  // at scopeGrowthPerDay, while today's remaining ones are closed.
+  projectedScope: number;
+  projectedDate: string | null;
+  // The projected date with the days to go shortened and lengthened by
+  // RANGE_BUFFER: the range the widget can draw around the projection. Null
+  // together with projectedDate.
+  optimisticDate: string | null;
+  pessimisticDate: string | null;
+}
+
+export interface BurnupDto {
+  days: BurnupDay[];
+  forecast: BurnupForecast;
+  targetDate: string | null;
+}
+
+export interface BurnupParams {
+  days: number;
+  initiativeId: number | null;
+  forecastWeeks: number;
+}
+
+// Unlike closings() above, which dates each issue by the moment it was closed, the
+// burnup asks what state every issue was in at the end of each day: the status row
+// whose stretch covers that midnight. So an issue that was reopened leaves the
+// completed line for the days it was open again, and a canceled issue leaves the
+// scope line — the chart is a history of the project, not of the events.
+export async function getBurnup(projectId: number, params: BurnupParams): Promise<BurnupDto> {
+  const targetDate = await initiativeTargetDate(projectId, params.initiativeId);
+  const initiativeFilter =
+    params.initiativeId == null ? sql`` : sql`AND i.initiative_id = ${params.initiativeId}::int`;
+  const rows = (await db.execute(sql`
+    WITH d AS (
+      SELECT generate_series(current_date - ${params.days - 1}::int, current_date, '1 day')::date AS day
+    )
+    SELECT to_char(d.day, 'YYYY-MM-DD') AS date,
+           (count(s.issue_id) FILTER (WHERE s.state_type IS DISTINCT FROM 'canceled'))::int AS scope,
+           (count(s.issue_id) FILTER (WHERE s.state_type IN ('started', 'completed')))::int AS started,
+           (count(s.issue_id) FILTER (WHERE s.state_type = 'completed'))::int AS completed
+      FROM d
+      LEFT JOIN (
+        SELECT s.issue_id, s.state_type, s.entered_at, s.left_at
+          FROM issue_status s
+          JOIN issue i ON i.id = s.issue_id
+         WHERE i.project_id = ${projectId} ${initiativeFilter}
+      ) s ON s.entered_at < d.day + 1
+         AND (s.left_at IS NULL OR s.left_at >= d.day + 1)
+     GROUP BY d.day
+     ORDER BY d.day`)) as unknown as BurnupDay[];
+  const days = rows.map((r) => ({
+    date: r.date,
+    scope: Number(r.scope),
+    started: Number(r.started),
+    completed: Number(r.completed),
+  }));
+  return { days, forecast: forecastCompletion(days, params.forecastWeeks * 7), targetDate };
+}
+
+// The initiative's target date, so the chart can draw it; null when the whole
+// project is charted. An initiative from another project is a 404, not an empty
+// chart, so a wrong id does not read as an initiative with no issues.
+async function initiativeTargetDate(
+  projectId: number,
+  initiativeId: number | null,
+): Promise<string | null> {
+  if (initiativeId == null) return null;
+  const [row] = await db
+    .select({ targetDate: initiative.targetDate })
+    .from(initiative)
+    .where(and(eq(initiative.id, initiativeId), eq(initiative.projectId, projectId)))
+    .limit(1);
+  if (!row) throw new HttpError(404, 'Initiative not found');
+  return row.targetDate;
+}
+
+// The buffer Linear's project graph puts around its projected date.
+const RANGE_BUFFER = 0.4;
+
+// A completion date from two rates over the whole weeks inside the last
+// `windowDays` days of the series, the latest week weighted heaviest (a window
+// with no whole week uses the plain rates): the closing rate, and the scope's
+// growth rate. The days to go cover today's remaining issues plus the ones
+// expected to appear while they are closed — one round, not compounded, so a
+// scope growing faster than it is closed still gets a date. No date when nothing
+// was closed in the window or nothing is left — the widget says so instead of
+// drawing a line to infinity.
+export function forecastCompletion(days: BurnupDay[], windowDays: number): BurnupForecast {
+  const last = days[days.length - 1];
+  if (!last) {
+    return {
+      windowDays: 0,
+      velocityPerDay: 0,
+      scopeGrowthPerDay: 0,
+      remaining: 0,
+      projectedScope: 0,
+      projectedDate: null,
+      optimisticDate: null,
+      pessimisticDate: null,
+    };
+  }
+  const lastIndex = days.length - 1;
+  const startIndex = Math.max(0, lastIndex - windowDays);
+  const velocity = rateOver(days, startIndex, 'completed');
+  const growth = Math.max(0, rateOver(days, startIndex, 'scope'));
+  const remaining = Math.max(0, last.scope - last.completed);
+  const daysForRemaining = velocity > 0 && remaining > 0 ? remaining / velocity : null;
+  const expected = daysForRemaining === null ? 0 : Math.round(growth * daysForRemaining);
+  const daysToGo = daysForRemaining === null ? null : (remaining + expected) / velocity;
+  const dateAt = (factor: number) =>
+    daysToGo === null ? null : addDays(last.date, Math.ceil(daysToGo * factor));
+  return {
+    windowDays: lastIndex - startIndex,
+    velocityPerDay: round2(velocity),
+    scopeGrowthPerDay: round2(growth),
+    remaining,
+    projectedScope: last.scope + expected,
+    projectedDate: dateAt(1),
+    optimisticDate: dateAt(1 - RANGE_BUFFER),
+    pessimisticDate: dateAt(1 + RANGE_BUFFER),
+  };
+}
+
+// The daily rate of `key` over the whole weeks between startIndex and the last
+// day, the latest week weighted n, the earliest 1; the plain rate over the span
+// when there is no whole week, 0 for a single point.
+function rateOver(days: BurnupDay[], startIndex: number, key: 'completed' | 'scope'): number {
+  const lastIndex = days.length - 1;
+  const weeks = Math.floor((lastIndex - startIndex) / 7);
+  if (weeks === 0) {
+    const span = lastIndex - startIndex;
+    return span > 0 ? (days[lastIndex]![key] - days[startIndex]![key]) / span : 0;
+  }
+  let sum = 0;
+  let weightSum = 0;
+  for (let i = 0; i < weeks; i++) {
+    const end = lastIndex - i * 7;
+    const weight = weeks - i;
+    sum += (weight * (days[end]![key] - days[end - 7]![key])) / 7;
+    weightSum += weight;
+  }
+  return sum / weightSum;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+// 'YYYY-MM-DD' plus n days, computed in UTC so the local timezone never shifts the
+// calendar date.
+function addDays(date: string, n: number): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
 
 // --- Project-wide activity feed --------------------------------------------------
@@ -435,7 +612,7 @@ export async function listActivity(
 export interface AgentRunFeedItem {
   id: number;
   status: string;
-  trigger: 'mention' | 'delegation' | 'field' | 'schedule' | 'manual';
+  trigger: AgentRunTrigger;
   agentId: number;
   agentName: string;
   issueId: number | null;
@@ -444,15 +621,15 @@ export interface AgentRunFeedItem {
   createdAt: string;
 }
 
-// The project's agent runs, newest first, optionally narrowed to one status. Joins
-// agent_run through ai_agent (which carries the project scope and the agent name)
-// and issue when the run is issue-triggered.
+// The project's agent runs, newest first, optionally narrowed to one status. A run
+// carries the project it worked in; ai_agent is joined for the agent name and issue
+// when the run is issue-triggered.
 export async function listAgentRunFeed(
   projectId: number,
   opts: { status?: string | null; limit?: number } = {},
 ): Promise<AgentRunFeedItem[]> {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 50);
-  const conds = [eq(aiAgent.projectId, projectId)];
+  const conds = [eq(agentRun.projectId, projectId)];
   if (opts.status) conds.push(eq(agentRun.status, opts.status));
 
   const rows = await db
@@ -502,10 +679,9 @@ export async function getAgentRunStats(projectId: number, days: number): Promise
   const rows = await db
     .select({ status: agentRun.status, count: sql<number>`count(*)::int` })
     .from(agentRun)
-    .innerJoin(aiAgent, eq(aiAgent.id, agentRun.agentId))
     .where(
       and(
-        eq(aiAgent.projectId, projectId),
+        eq(agentRun.projectId, projectId),
         sql`${agentRun.createdAt} >= now() - make_interval(days => ${days})`,
       ),
     )
@@ -594,7 +770,10 @@ export async function getAgentWorkload(projectId: number): Promise<AgentWorkload
   const agents = await db
     .select({ id: aiAgent.id, userId: aiAgent.userId, name: aiAgent.username, kind: aiAgent.kind })
     .from(aiAgent)
-    .where(eq(aiAgent.projectId, projectId));
+    .innerJoin(
+      projectMember,
+      and(eq(projectMember.userId, aiAgent.userId), eq(projectMember.projectId, projectId)),
+    );
   if (agents.length === 0) return [];
 
   const delegatedRows = await db
@@ -613,8 +792,7 @@ export async function getAgentWorkload(projectId: number): Promise<AgentWorkload
       failed: sql<number>`(count(*) filter (where ${agentRun.status} = 'failed'))::int`,
     })
     .from(agentRun)
-    .innerJoin(aiAgent, eq(aiAgent.id, agentRun.agentId))
-    .where(eq(aiAgent.projectId, projectId))
+    .where(eq(agentRun.projectId, projectId))
     .groupBy(agentRun.agentId);
   const runsByAgent = new Map(runRows.map((r) => [r.agentId, r]));
 

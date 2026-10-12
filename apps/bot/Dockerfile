@@ -1,6 +1,6 @@
 # ── Telegram bot service (Bun) — built from the monorepo root ──
 # build context in docker-compose = repository root (.)
-FROM oven/bun:1.3.14-alpine AS base
+FROM oven/bun:1.4.0-alpine AS base
 WORKDIR /app
 
 # 1) Install dependencies from manifests (cacheable layer). All workspace
@@ -17,6 +17,8 @@ COPY packages/auth/package.json ./packages/auth/
 COPY packages/agent-tools/package.json ./packages/agent-tools/
 COPY packages/crypto/package.json ./packages/crypto/
 COPY packages/mailer/package.json ./packages/mailer/
+COPY packages/net/package.json ./packages/net/
+COPY packages/storage/package.json ./packages/storage/
 COPY packages/runner/package.json ./packages/runner/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 # --filter bot installs only the bot workspace and its dependency closure.
@@ -32,6 +34,6 @@ ENV NODE_ENV=production
 COPY --from=install /app ./
 COPY . .
 
-# No database access and no migrations: the bot reads its token and writes account
-# links through the api's internal routes, so it only needs the api to be reachable.
+# No migrations: the api owns them. The bot reads the instance bot token and writes
+# account links through @repo/db, so it needs the database to be reachable.
 CMD ["bun", "run", "apps/bot/src/index.ts"]

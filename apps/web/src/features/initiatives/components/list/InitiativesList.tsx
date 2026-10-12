@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { Initiative, InitiativeSort, ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { Initiative, InitiativeSort } from '@/lib/api/endpoints/initiatives';
 import type { InitiativesTab } from '@/utils/paths';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -107,7 +108,7 @@ export default function InitiativesList({
             <InitiativeRow
               key={it.id}
               initiative={it}
-              projectKey={project.project.key}
+              projectKey={project.project.ref}
               owner={it.ownerUserId ? (ownerById.get(it.ownerUserId) ?? null) : null}
             />
           ))}

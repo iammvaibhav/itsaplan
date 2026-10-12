@@ -1,4 +1,5 @@
-import type { Project, ProjectFeatures } from '@/lib/api';
+import type { ProjectFeatures } from '@/lib/api/endpoints/settings';
+import type { Project } from '@/lib/api/endpoints/projects';
 
 // The optional sections plus the estimate kinds and time logging: everything the
 // rest of the app checks before showing a field. The sections are the Features page;
@@ -16,6 +17,7 @@ export function projectFeatures(project: Project | null): ProjectFeatureSet {
     initiatives: project?.initiativesEnabled ?? false,
     cycles: project?.cyclesEnabled ?? false,
     dashboards: project?.dashboardsEnabled ?? false,
+    documents: project?.documentsEnabled ?? false,
     notes: project?.notesEnabled ?? false,
     subtasks: project?.subtasksEnabled ?? false,
     checklists: project?.checklistsEnabled ?? false,

@@ -1,36 +1,46 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import type { ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import { issuePath, projectPath } from '@/utils/paths';
 import type { useOverlays } from '@/hooks/useOverlays';
 import NewProjectModal from '@/components/layout/NewProjectModal';
+import InitiativeDialog from '@/components/common/overlay/InitiativeDialog';
 import NewIssueModal from '@/features/issue/components/create/NewIssueModal';
 import IssueDetail from '@/features/issue/components/detail/IssueDetail';
 
-// The project-level overlays the Shell mounts above its content: the new-project
-// modal, the new-issue modal and the issue detail panel. Each renders only while its
-// overlay state says it is open.
+// The project-level overlays the Shell mounts above its content. Each renders only
+// while its overlay state says it is open.
 export default function ShellOverlays({
   project,
   projectKey,
+  newProjectTeamId,
   overlays,
 }: {
   project: ProjectDetail | null;
   projectKey: string | null;
+  newProjectTeamId: number | undefined;
   overlays: ReturnType<typeof useOverlays>;
 }) {
   const router = useRouter();
 
   return (
     <>
-      {overlays.showNewProject && (
+      {newProjectTeamId != null && overlays.showNewProject && (
         <NewProjectModal
+          teamId={newProjectTeamId}
           onClose={() => overlays.setShowNewProject(false)}
           onCreated={(key) => {
             overlays.setShowNewProject(false);
             router.push(projectPath(key));
           }}
+        />
+      )}
+
+      {projectKey && overlays.showNewInitiative && (
+        <InitiativeDialog
+          projectKey={projectKey}
+          onClose={() => overlays.setShowNewInitiative(false)}
         />
       )}
 

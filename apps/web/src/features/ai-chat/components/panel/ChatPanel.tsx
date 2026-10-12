@@ -34,6 +34,8 @@ export function ChatPanel({
   onToggleMode,
   onToggleFullscreen,
   onClose,
+  newChatAgentId,
+  onNewChatHandled,
 }: {
   projectKey: string;
   open: boolean;
@@ -42,6 +44,9 @@ export function ChatPanel({
   onToggleMode: () => void;
   onToggleFullscreen: () => void;
   onClose: () => void;
+  // An agent a page asked to chat with: the body opens a tab on it and reports back.
+  newChatAgentId: number | null;
+  onNewChatHandled: () => void;
 }) {
   const t = useTranslations('aiChat');
   const tCommon = useTranslations('common');
@@ -121,7 +126,13 @@ export function ChatPanel({
         </Button>
       </div>
 
-      {opened.current && <ChatPanelBody projectKey={projectKey} />}
+      {opened.current && (
+        <ChatPanelBody
+          projectKey={projectKey}
+          newChatAgentId={newChatAgentId}
+          onNewChatHandled={onNewChatHandled}
+        />
+      )}
     </aside>
   );
 }

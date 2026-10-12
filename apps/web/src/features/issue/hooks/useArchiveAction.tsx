@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { type Issue, type ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { Issue } from '@/lib/api/endpoints/issues';
 import { subtaskCount } from '@/utils/subtasks';
 import { useArchiveIssue } from '@/services/issues.service';
 import ArchiveIssueDialog from '../components/actions/ArchiveIssueDialog';
@@ -16,7 +17,7 @@ export function useArchiveAction(
   project: ProjectDetail | null,
   onArchived?: () => void,
 ): { archive: (issue: Issue) => void; dialog: ReactNode } {
-  const archiveIssue = useArchiveIssue(project?.project.key ?? null);
+  const archiveIssue = useArchiveIssue(project?.project.ref ?? null);
   const [confirming, setConfirming] = useState<Issue | null>(null);
 
   const archive = (issue: Issue) => {

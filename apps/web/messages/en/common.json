@@ -51,7 +51,6 @@
         "toggle": "Open the command palette"
       },
       "project": {
-        "switch": "Switch to project 1–9",
         "new": "New project",
         "settings": "Open project settings"
       },
@@ -63,6 +62,9 @@
       },
       "issue": {
         "new": "New issue"
+      },
+      "initiative": {
+        "new": "New initiative"
       },
       "view": {
         "kanban": "Board layout",
@@ -98,7 +100,27 @@
     "title": "Chat with {agent}",
     "unreachable": "Could not reach the agent. Try again.",
     "runnerOffline": "Runner offline",
-    "runnerOfflineHint": "Start the runner on your machine to chat with this agent."
+    "runnerOfflineHint": "Start the runner on your machine to chat with this agent.",
+    "attachFile": "Attach a spreadsheet, document, PDF, or text file for the agent to read",
+    "removeAttachment": "Remove attachment",
+    "uploadFailed": "Could not upload the file.",
+    "tooManyAttachments": "You can attach up to {max} files to one message.",
+    "importRows": "{count, plural, one {# row} other {# rows}}",
+    "confirmImport": "Confirm import",
+    "cancelImport": "Cancel",
+    "importWorking": "Creating issues…",
+    "importShowAllRows": "Show all {count} rows",
+    "importShowFewerRows": "Show first {count} rows",
+    "importRowState": "Import",
+    "importRowNew": "Will be created",
+    "importSkipHint": "Rows marked ✕ are skipped on confirm.",
+    "importAdjustHint": "Ask the agent to adjust the mapping if anything looks wrong.",
+    "importCanceled": "This import was canceled. Nothing was created.",
+    "importFailed": "The import failed.",
+    "importConfirmed": "{count, plural, one {Created # issue} other {Created # issues}}",
+    "importSkippedRow": "Skipped row {row}: {reason}",
+    "contextSize": "Conversation context: {count, plural, one {# token} other {# tokens}}",
+    "contextUnavailable": "The context size is not available for this agent"
   },
   "share": {
     "createFailed": "Could not create the link. Try again.",
@@ -129,6 +151,7 @@
     "initiatives": "Initiatives",
     "cycles": "Cycles",
     "dashboards": "Dashboards",
+    "documents": "Docs",
     "notes": "Notes",
     "subtasks": "Subtasks",
     "checklists": "Checklists",
@@ -150,10 +173,44 @@
     "tableDeleteRow": "Delete row",
     "tableAddColumn": "Add column",
     "tableDeleteColumn": "Delete column",
-    "tableDelete": "Delete table"
+    "tableDelete": "Delete table",
+    "insertImage": "Insert image",
+    "insertNamed": "Insert {name}",
+    "noImages": "No images attached yet. Upload one from the Attachments panel, or drop it straight onto the editor.",
+    "image": "Image",
+    "linkPreview": "Link preview",
+    "openPreviewLink": "Open {name} in a new tab",
+    "loadingPreview": "Loading preview…",
+    "previewUnavailable": "A preview is not available. Open the link to view this page.",
+    "internalPage": "ItsAPlan page",
+    "internalPreviewUnavailable": "This page is unavailable or you do not have access.",
+    "previewNoteCount": "{count, plural, one {# note} other {# notes}}",
+    "previewCustomField": "Custom field",
+    "previewAllWorkItems": "All work items",
+    "previewUpdated": "Updated {date}",
+    "previewOtherValues": "({count} more)",
+    "previewLink": "Preview link",
+    "previewLinks": "Preview links ({count})",
+    "previewNamedLink": "Preview {name}",
+    "backToLinks": "Back to links",
+    "openLink": "Open link",
+    "copyLink": "Copy link",
+    "copiedLink": "Copied",
+    "editLink": "Edit link",
+    "retryPreview": "Try again",
+    "copyLinkFailed": "Could not copy the link. Select and copy the URL above."
   },
   "chart": {
     "download": "Save chart",
     "downloadFailed": "The chart could not be saved"
-  }
+  },
+  "agent": "Agent",
+  "pager": {
+    "previous": "Previous page",
+    "next": "Next page",
+    "page": "Page {number}",
+    "perPage": "per page",
+    "range": "{first}-{last} of {total}"
+  },
+  "aboutCloudAndPro": "Learn about Cloud and Pro"
 }

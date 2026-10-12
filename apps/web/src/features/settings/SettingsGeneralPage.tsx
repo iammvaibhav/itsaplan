@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import type { ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import { useShell } from '@/context/shellContext';
 import { settingsSection } from '@/utils/settingsSections';
 import { useSettingsSectionText } from '@/hooks/useSectionLabels';
@@ -16,7 +16,7 @@ import { useFeatureToggles } from './hooks/useFeatureToggles';
 
 const section = settingsSection('general');
 
-// The General settings page (/project/:projectKey/settings/general). Edits the
+// The General settings page (/:team/:projectKey/settings/general). Edits the
 // project name and description; the key is shown read-only. Save lives in the page
 // header.
 export default function SettingsGeneralPage() {
@@ -34,8 +34,6 @@ function GeneralPage({ project }: { project: ProjectDetail }) {
     <SectionPageView
       title={sectionText.label}
       description={sectionText.description}
-      wide
-      widthClassName="min-w-[600px] max-w-[60%]"
       actions={
         form.editable ? (
           <Button size="sm" onClick={() => void form.save()} disabled={!form.canSave}>

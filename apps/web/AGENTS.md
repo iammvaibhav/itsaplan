@@ -13,6 +13,44 @@ Next.js App Router, SSR (not SPA). Tailwind v4 + shadcn/ui. See root `AGENTS.md`
   `components/common`.
 - The shared layer never imports a feature. `app/` routes stay thin: mount the feature page and
   providers only.
+- **`@/cloud` is the seam for the hosted edition.** It resolves to `src/ce/index.ts`, which
+  exports what a self-hosted instance runs. A cloud-only part is imported from there and
+  nowhere else. `useWorkspaceSections(workspace, core)` returns a workspace's settings menu,
+  shown by `WorkspaceSectionNav`: here the core's sections as they are, while the hosted
+  build adds its own at any position or drops some. One it adds carries in `Component` the
+  page `/workspaces/:id/:sectionId` opens. Every section names its group: an `overview`
+  one sits at the top of the menu, a `settings` one in the folding Settings group below,
+  each in the order given.
+  `/workspaces/:id` names no section and opens the first entry of the menu, so the order
+  also decides the page a workspace opens on.
+  `NoTeamStart` is the start page of an account with no team and no workspace it owns,
+  which happens while personal workspaces are off; here it says who adds them.
+  `WorkspaceRailActions` sits below the workspace tiles of a rail; here it says where more
+  than one workspace per person is available. `ShellNotice` is a strip under the top bar of
+  the app shell, god mode and the teams pages; here it shows nothing, while the hosted
+  build shows notices about the instance there. `godSections(core)` returns the god mode
+  sections: here the core's as they are, while the hosted build adds, replaces or drops
+  some. One it adds carries in `Component` the page `/god/<slug>` opens. SCIM is set up in
+  god mode, for the instance workspace; the hosted build that moves it to every
+  workspace drops the god section and adds `WorkspaceScimSection` through
+  `useWorkspaceSections`. `GodSectionExtras` renders at the end of every god section page, by
+  its slug, for settings the hosted build adds to an existing section; `WorkspaceSectionExtras`
+  does the same on a workspace's own settings pages (`general`, `managers`), with the
+  workspace, and its controls save themselves. `ScheduleDialog` is the dialog that creates
+  and edits an agent schedule: here the core's, while the hosted build opens its own with
+  the same props, with the schedule types it adds and the `options` it keeps on a
+  schedule. The schedule list names such a type by the message
+  `settings.schedules.types.<id>`. `AgentAnalyticsExtras` renders below the panels of an
+  agent dashboard, a team's or a workspace's, with the scope and the window it shows;
+  here a preview of the panels the hosted build and Pro add, which folds to its title and
+  description. `cloudMessages` is the
+  hosted build's English, merged into the catalogue the keys are typed against (a god
+  section's name and blurb go under `sections.god.<slug>` like the core ones), and
+  `loadCloudMessages(locale)` returns its other languages. The i18n request config imports
+  `@/cloud` on the server for the messages, so every component file it exports starts with
+  `'use client'`.
+  The hosted build points `CLOUD_UI_ENTRY` at its own module exporting the same names, and
+  `WEB_TRACING_ROOT` at the root its workspace has; unset, both are what this repository needs.
 
 ## Feature structure & decomposition
 
@@ -41,9 +79,9 @@ Next.js App Router, SSR (not SPA). Tailwind v4 + shadcn/ui. See root `AGENTS.md`
   packages (`api.ts`, `auth-client.ts`, `markdown.ts`, `dnd.ts`) plus shadcn's `utils.ts` (`cn`,
   fixed by `components.json`); `src/utils` holds own helpers and constants with no external
   package behind them. `src/context` holds shared React contexts and their `use*` readers.
-- `components/common` groups by purpose: `agent-chat/`, `editor/`, `fields/`, `inputs/`, `page/`,
-  `overlay/`, `permissions/`, `hotkeys/`, `skeleton/`. A component that fits none of them stays at the
-  `common/` root.
+- `components/common` groups by purpose: `agent-chat/`, `attachments/`, `chart/`, `editor/`,
+  `fields/`, `hotkeys/`, `inputs/`, `overlay/`, `page/`, `permissions/`, `share/`, `skeleton/`,
+  `timeline/`. A component that fits none of them stays at the `common/` root.
   Imports of a sibling in the same folder are relative; everything else uses `@/`.
 - Component files use the feature name as a PascalCase prefix, file name = exported name. Service
   files carry a `.service.ts` suffix (`passkeys.service.ts`). Other non-component files use plain
@@ -58,7 +96,7 @@ next-intl, language from the `NEXT_LOCALE` cookie — no `[locale]` route segmen
 - English is the source: `src/i18n/messages.ts` imports it statically, merges the chosen
   language over it, and types every `t('…')`. A new key goes there first or typecheck fails;
   an untranslated one renders its English text.
-- A new namespace needs its file in every language plus an entry in `defaultMessages`.
+- A new namespace needs its file in every language plus an entry in `coreMessages`.
 - A new language: `messages/<code>/`, `src/i18n/locales.ts`, `src/hooks/useDateFnsLocale.ts`,
   and `LOCALES`/`Locale` in `apps/api/src/modules/user-preferences/`. No migration — the `locale`
   column has no CHECK. One written right to left also goes in `RTL_LOCALES`.
@@ -85,7 +123,28 @@ next-intl, language from the `NEXT_LOCALE` cookie — no `[locale]` route segmen
 - A screen that has to stay live calls `useLiveRefresh({ scope, targets })` with a scope from
   `@/utils/revScopes` — never its own polling. `SyncProvider` polls every registered scope in one
   request and invalidates the targets of the ones that moved.
-- Call the backend over HTTP at the API origin. `lib/api.ts` takes it from
+- **A paged list holds its window in `usePaging()` and renders `ListPager`.** The hook owns
+  `page`/`pageSize`; a filter change calls its `reset()`, and `ListPager` pulls the page back
+  when deleting rows leaves the reader past the end. Spread `paging.params` straight into the
+  query — the API takes `page`/`pageSize` and answers `{ items, total, page, pageSize }`.
+  A "show more" list reads the same route through `useInfiniteQuery` with
+  `getNextPageParam: nextPageParam` (`useCompletedCyclesQuery` is the shape to copy); a feed
+  reads a cursor route instead. A picker that needs every row calls the list's `/options`
+  endpoint — never a paged one with a large `pageSize`.
+- **The API client is split by domain.** `lib/api/core/` holds the transport —
+  `client.ts` (`API_URL`, `request()`, `uploadFile()`, `ApiError`, `apiFailure`, the
+  401 sign-out), `paging.ts` (`Page<T>`, `PageParams`, `pageQuery`, `nextPageParam`)
+  and `media.ts` (`mediaUrl`). `lib/api/endpoints/` holds one flat file per domain,
+  named after the module of `apps/api/src/modules` it calls: an endpoint on the API in
+  `modules/cycles/` is reached from `lib/api/endpoints/cycles.ts`. A file keeps its
+  DTOs next to the functions that return them, and exports both by name — there is no
+  `index.ts` anywhere under `lib/api`, and no barrel re-exporting the domains. Types
+  cross domains with `import type`, which the compiler erases, so a composite like
+  `ProjectDetail` is assembled in the domain that owns the route without a runtime
+  cycle. A moved type whose name matches a DOM global (`Permissions`, `Notification`,
+  `Storage`) resolves to that global when its import is missing, so tsc stays silent
+  while the type is wrong: import it explicitly.
+- Call the backend over HTTP at the API origin. `lib/api/core/client.ts` takes it from
   `utils/runtimeEnv`, which reads `API_URL` in the server process and hands it to the
   browser through the inline script in `components/runtime-env-script.tsx`. A per-instance
   value goes through there — never `process.env.NEXT_PUBLIC_*` in a component, which
@@ -94,6 +153,26 @@ next-intl, language from the `NEXT_LOCALE` cookie — no `[locale]` route segmen
   streams them from the api), not from an absolute api url. That keeps them local images
   for `next/image`: `images.remotePatterns` is frozen into the standalone build, so an
   api origin listed there would only be valid for the instance that built the image.
+- **Every write to the API tells the user how it went.** A failed mutation is toasted by the
+  `MutationCache` in `components/providers.tsx`, so a call site adds nothing for the failure;
+  it adds the `toast.success(...)` for the success, from the mutation's `onSuccess`, with a
+  translated message naming what was saved. A write whose result the screen already shows —
+  a row that appears, a field that fills in, a dialog that closes on the created entity — needs
+  no success toast; one whose effect is invisible does. A mutation that renders its own error
+  instead opts out with `meta: { suppressErrorToast: true }`.
+- **A reader gets values, not disabled controls.** When the current user may not change a
+  setting, render its state — an icon plus a word, a plain row — instead of a switch, input,
+  or button that is disabled. A disabled control reads the same whether it is off or merely
+  locked. Say once, next to the setting, who can change it. And when a switch that gates a
+  whole section is off, drop the section: the settings under it and the instructions that
+  depend on them change nothing until it is on. One read-only state looks the same everywhere:
+  the same icon and the same wording for on and off, in the row the control would have taken —
+  reuse the component that already renders it rather than styling a second variant.
+- **A workspace's owner and admins reach its projects and teams without being members.**
+  The API says so with `via: 'workspace'` on the project viewer (`usePermissions().isMember`
+  is false), on a project in the list and on a team. What hangs on the membership itself
+  is left out for them: starring and hiding a project, leaving it or the team, and the
+  project's notification settings. Everything else follows `can()` as for a member.
 - Add shadcn components with `bunx shadcn@latest add <name>` (config in `components.json`).
 - **Don't edit `src/components/ui/`** — those files are generated and re-adding a component
   overwrites them. Style them from the outside instead: every primitive carries a `data-slot`

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { type ProjectDetail, type Column } from '@/lib/api';
+import type { Column } from '@/lib/api/endpoints/columns';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import ConfirmDialog from '@/components/common/overlay/ConfirmDialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -29,7 +30,7 @@ export default function SettingsDeleteStateDialog({
   const otherColumns = project.columns.filter((c) => c.id !== column.id);
   const [action, setAction] = useState<'move' | 'delete'>(otherColumns.length ? 'move' : 'delete');
   const [targetColumnId, setTargetColumnId] = useState<number | undefined>(otherColumns[0]?.id);
-  const deleteColumn = useDeleteColumn(project.project.key);
+  const deleteColumn = useDeleteColumn(project.project.ref);
 
   async function confirm() {
     const body =

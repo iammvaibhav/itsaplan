@@ -5,10 +5,11 @@ import { useRef, useState, type ReactNode } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Direction } from 'radix-ui';
 import { toast } from 'sonner';
-import { ApiError } from '@/lib/api';
+import { ApiError } from '@/lib/api/core/client';
 import { localeDirection, type Locale } from '@/i18n/locales';
 import { HotkeysProvider } from '@/context/useHotkeys';
 import { SyncProvider } from '@/context/syncContext';
+import { RelativeTimeProvider } from '@/context/relativeTimeContext';
 import { Toaster } from '@/components/ui/sonner';
 import PreferencesSync from '@/components/preferences-sync';
 import SessionScope from '@/components/session-scope';
@@ -66,7 +67,9 @@ export function Providers({ children }: { children: ReactNode }) {
         <PreferencesSync />
         <PaseoEmbedBridge />
         <SyncProvider>
-          <HotkeysProvider>{children}</HotkeysProvider>
+          <RelativeTimeProvider>
+            <HotkeysProvider>{children}</HotkeysProvider>
+          </RelativeTimeProvider>
         </SyncProvider>
         <Toaster position={dir === 'rtl' ? 'bottom-left' : 'bottom-right'} dir={dir} richColors />
       </Direction.Provider>

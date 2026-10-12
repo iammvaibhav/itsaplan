@@ -3,6 +3,8 @@ import { app, apiKeyApi, authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { addProjectMember } from '#tests/helpers/members';
+import { createAgent, teamOf } from '#tests/helpers/agents';
+import { agentChatConfig } from '#modules/agents/chat/service';
 
 // Chatting with an external agent: a member sends a message, the agent's runner claims
 // it, reports what its command produces as AG-UI events, and closes it. The claim waits
@@ -11,11 +13,21 @@ import { addProjectMember } from '#tests/helpers/members';
 process.env.AGENT_CHAT_CLAIM_WAIT_MS = '50';
 process.env.AGENT_CHAT_CLAIM_POLL_MS = '10';
 
+it('caps configured claim wait below the runner request timeout', () => {
+  const previous = process.env.AGENT_CHAT_CLAIM_WAIT_MS;
+  process.env.AGENT_CHAT_CLAIM_WAIT_MS = '60000';
+  try {
+    expect(agentChatConfig.claimWaitMs()).toBe(30_000);
+  } finally {
+    process.env.AGENT_CHAT_CLAIM_WAIT_MS = previous;
+  }
+});
+
 async function setup() {
   const owner = await signUpTestUser({ name: 'Owner' });
   const asOwner = authedApi(owner.cookie);
   await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
-  const created = await asOwner.projects({ projectKey: 'MKT' })['ai-agents'].post({
+  const created = await createAgent(asOwner, 'MKT', {
     name: 'Ext Bot',
     username: 'ext',
     kind: 'external',
@@ -34,6 +46,16 @@ function chatOf(api: Api, agentId: number) {
 
 function send(api: Api, agentId: number, prompt: string, threadId?: string) {
   return chatOf(api, agentId).chat.post(threadId ? { prompt, threadId } : { prompt });
+}
+
+// Claims the agent's queued answer and closes it with the given text, the way a runner
+// does, so the conversation carries a reply the search can match.
+async function answer(asRunner: Api, text: string) {
+  const claimed = (await asRunner['agent-chats'].claim.post()).data!.message!;
+  await asRunner['agent-chats']({ messageId: claimed.id }).events.post({
+    events: [{ type: 'TEXT_MESSAGE_CONTENT', messageId: 'm1', delta: text }],
+  });
+  await asRunner['agent-chats']({ messageId: claimed.id }).result.post({ status: 'success' });
 }
 
 // The stream is a raw Response rather than a JSON body, so it is driven through the
@@ -81,7 +103,10 @@ describe('external agent chat', () => {
 
   it("mixes the agent's own instructions into the system prompt", async () => {
     const { asOwner, asRunner, agent } = await setup();
-    await chatOf(asOwner, agent.id).patch({ instructions: 'Always answer in German.' });
+    await asOwner
+      .teams({ teamId: await teamOf(asOwner, 'MKT') })
+      ['ai-agents']({ agentId: agent.id })
+      .patch({ instructions: 'Always answer in German.' });
     await send(asOwner, agent.id, 'Status?');
 
     const claimed = await asRunner['agent-chats'].claim.post();
@@ -175,12 +200,289 @@ describe('external agent chat', () => {
     );
   });
 
+  // The runner is what measures the context size, so the thread list is where the member
+  // reads it back.
+  it('keeps the context size the runner reported with the answer', async () => {
+    const { asOwner, asRunner, agent } = await setup();
+    const sent = await send(asOwner, agent.id, 'Status?');
+
+    const fresh = await chatOf(asOwner, agent.id).threads.get();
+    expect(fresh.data!.items[0].contextTokens).toBeUndefined();
+
+    const answer = (await asRunner['agent-chats'].claim.post()).data!.message!;
+    await asRunner['agent-chats']({ messageId: answer.id }).result.post({
+      status: 'success',
+      usage: { inputTokens: 44_945, outputTokens: 300 },
+    });
+
+    const answered = await chatOf(asOwner, agent.id).threads.get();
+    expect(answered.data!.items.find((t) => t.id === sent.data!.threadId)!.contextTokens).toBe(
+      45_245,
+    );
+
+    // Every answer replaces the number: only the last one says how large the context is.
+    await send(asOwner, agent.id, 'And now?', sent.data!.threadId);
+    const second = (await asRunner['agent-chats'].claim.post()).data!.message!;
+    await asRunner['agent-chats']({ messageId: second.id }).result.post({
+      status: 'success',
+      usage: { inputTokens: 50_000, outputTokens: 100 },
+    });
+
+    const again = await chatOf(asOwner, agent.id).threads.get();
+    expect(again.data!.items.find((t) => t.id === sent.data!.threadId)!.contextTokens).toBe(50_100);
+  });
+
+  it('tells a command that reports no counts apart from a runner that reports none', async () => {
+    const { asOwner, asRunner, agent } = await setup();
+    const sent = await send(asOwner, agent.id, 'Status?');
+
+    // An older runner sends no field at all: the answer is stored with no number and no
+    // error.
+    const answer = (await asRunner['agent-chats'].claim.post()).data!.message!;
+    const closed = await asRunner['agent-chats']({ messageId: answer.id }).result.post({
+      status: 'success',
+    });
+    expect(closed.status).toBe(204);
+    const silent = await chatOf(asOwner, agent.id).threads.get();
+    expect(silent.data!.items[0].contextTokens).toBeUndefined();
+
+    // A runner whose command has no usable counts says so with null, which the chat
+    // shows as a dash.
+    await send(asOwner, agent.id, 'And now?', sent.data!.threadId);
+    const second = (await asRunner['agent-chats'].claim.post()).data!.message!;
+    await asRunner['agent-chats']({ messageId: second.id }).result.post({
+      status: 'success',
+      usage: null,
+    });
+
+    const dashed = await chatOf(asOwner, agent.id).threads.get();
+    expect(dashed.data!.items.find((t) => t.id === sent.data!.threadId)!.contextTokens).toBeNull();
+  });
+
+  it('keeps the counts of an answer that failed', async () => {
+    const { asOwner, asRunner, agent } = await setup();
+    await send(asOwner, agent.id, 'Status?');
+
+    const answer = (await asRunner['agent-chats'].claim.post()).data!.message!;
+    await asRunner['agent-chats']({ messageId: answer.id }).result.post({
+      status: 'failed',
+      error: 'Command exited with 1',
+      usage: { inputTokens: 900, outputTokens: 100 },
+    });
+
+    const threads = await chatOf(asOwner, agent.id).threads.get();
+    expect(threads.data!.items[0].contextTokens).toBe(1000);
+  });
+
+  it('drops the context size with the thread', async () => {
+    const { asOwner, asRunner, agent } = await setup();
+    const sent = await send(asOwner, agent.id, 'Status?');
+    const answer = (await asRunner['agent-chats'].claim.post()).data!.message!;
+    await asRunner['agent-chats']({ messageId: answer.id }).result.post({
+      status: 'success',
+      usage: { inputTokens: 100, outputTokens: 10 },
+    });
+
+    expect(
+      (await chatOf(asOwner, agent.id).threads({ threadId: sent.data!.threadId }).delete()).status,
+    ).toBe(204);
+
+    // The next thread takes ids of its own, so nothing is left to inherit the number: it
+    // is gone with the thread it belonged to.
+    const after = await chatOf(asOwner, agent.id).threads.get();
+    expect(after.data!.items).toHaveLength(0);
+  });
+
   it('hands a claimed answer to no one else until its lease expires', async () => {
     const { asOwner, asRunner, agent } = await setup();
     await send(asOwner, agent.id, 'Hello');
 
     expect((await asRunner['agent-chats'].claim.post()).data!.message).not.toBeNull();
     expect((await asRunner['agent-chats'].claim.post()).data!.message).toBeNull();
+  });
+
+  for (const bound of [false, true]) {
+    it(`serializes concurrent claims in a ${bound ? 'bound' : 'fresh'} thread`, async () => {
+      const { asOwner, asRunner, agent } = await setup();
+      const first = (await send(asOwner, agent.id, 'First')).data!;
+      if (bound) {
+        const seed = (await asRunner['agent-chats'].claim.post()).data!.message!;
+        await asRunner['agent-chats']({ messageId: seed.id }).events.post({
+          sessionId: 'existing-session',
+          events: [{ type: 'RUN_STARTED' }],
+        });
+        await asRunner['agent-chats']({ messageId: seed.id }).result.post({ status: 'success' });
+      }
+      const queued = await Promise.all(
+        ['Second', 'Third', 'Fourth'].map((prompt) =>
+          send(asOwner, agent.id, prompt, first.threadId),
+        ),
+      );
+      const expectedIds = [
+        ...(bound ? [] : [first.messageId]),
+        ...queued.map((sent) => sent.data!.messageId).sort((a, b) => a - b),
+      ];
+      for (const id of expectedIds) {
+        const runners = [asRunner, asRunner, asRunner, asRunner];
+        const claims = await Promise.all(
+          runners.map((runner) => runner['agent-chats'].claim.post()),
+        );
+        expect(claims.map((claim) => claim.status)).toEqual([200, 200, 200, 200]);
+        const answers = claims.flatMap((claim) =>
+          claim.data!.message ? [claim.data!.message] : [],
+        );
+        expect(answers).toHaveLength(1);
+        expect(answers[0]).toMatchObject({
+          id,
+          attempts: 1,
+          sessionId: bound ? 'existing-session' : null,
+        });
+        await asRunner['agent-chats']({ messageId: id }).result.post({ status: 'success' });
+      }
+    });
+  }
+
+  it('binds the initial session before issuing the next answer', async () => {
+    const { asOwner, asRunner, agent } = await setup();
+    const first = (await send(asOwner, agent.id, 'First')).data!;
+    const second = (await send(asOwner, agent.id, 'Second', first.threadId)).data!;
+    const claimed = (await asRunner['agent-chats'].claim.post()).data!.message!;
+    expect(claimed).toMatchObject({ id: first.messageId, sessionId: null });
+    expect((await asRunner['agent-chats'].claim.post()).data!.message).toBeNull();
+    await asRunner['agent-chats']({ messageId: claimed.id }).events.post({
+      sessionId: 'new-session',
+      events: [{ type: 'RUN_STARTED' }],
+    });
+    await asRunner['agent-chats']({ messageId: claimed.id }).result.post({ status: 'success' });
+    expect((await asRunner['agent-chats'].claim.post()).data!.message).toMatchObject({
+      id: second.messageId,
+      sessionId: 'new-session',
+      prompt: 'Second',
+      systemPrompt: '',
+    });
+  });
+
+  it('claims different threads concurrently while keeping each next answer queued', async () => {
+    const { asOwner, asRunner, agent } = await setup();
+    const first = (await send(asOwner, agent.id, 'One')).data!;
+    const other = (await send(asOwner, agent.id, 'Other')).data!;
+    await send(asOwner, agent.id, 'Later', first.threadId);
+    const claims = await Promise.all([
+      asRunner['agent-chats'].claim.post(),
+      asRunner['agent-chats'].claim.post(),
+    ]);
+    expect(claims.map((claim) => claim.data!.message!.id).sort((a, b) => a - b)).toEqual([
+      first.messageId,
+      other.messageId,
+    ]);
+    expect((await asRunner['agent-chats'].claim.post()).data!.message).toBeNull();
+  });
+
+  for (const status of ['success', 'failed', 'canceled'] as const) {
+    it(`advances past a ${status} answer and skips a canceled queued answer`, async () => {
+      const { asOwner, asRunner, agent } = await setup();
+      const first = (await send(asOwner, agent.id, 'First')).data!;
+      const skipped = (await send(asOwner, agent.id, 'Skip', first.threadId)).data!;
+      const next = (await send(asOwner, agent.id, 'Next', first.threadId)).data!;
+      expect((await asRunner['agent-chats'].claim.post()).data!.message!.id).toBe(first.messageId);
+      await chatOf(asOwner, agent.id).chat({ messageId: skipped.messageId }).cancel.post();
+      expect((await asRunner['agent-chats'].claim.post()).data!.message).toBeNull();
+      if (status === 'canceled') {
+        await chatOf(asOwner, agent.id).chat({ messageId: first.messageId }).cancel.post();
+      } else {
+        await asRunner['agent-chats']({ messageId: first.messageId }).result.post({ status });
+      }
+      expect((await asRunner['agent-chats'].claim.post()).data!.message!.id).toBe(next.messageId);
+    });
+  }
+
+  it('recovers the oldest expired lease and advances after exhausted attempts', async () => {
+    const previousLease = process.env.AGENT_CHAT_LEASE_SECONDS;
+    const previousAttempts = process.env.AGENT_CHAT_MAX_ATTEMPTS;
+    process.env.AGENT_CHAT_LEASE_SECONDS = '1';
+    process.env.AGENT_CHAT_MAX_ATTEMPTS = '2';
+    try {
+      const { asOwner, asRunner, agent } = await setup();
+      const first = (await send(asOwner, agent.id, 'First')).data!;
+      const next = (await send(asOwner, agent.id, 'Next', first.threadId)).data!;
+      expect((await asRunner['agent-chats'].claim.post()).data!.message).toMatchObject({
+        id: first.messageId,
+        attempts: 1,
+      });
+      await asRunner['agent-chats']({ messageId: first.messageId }).events.post({
+        events: [{ type: 'TEXT_MESSAGE_CONTENT', messageId: 'm1', delta: 'abandoned' }],
+      });
+      expect((await asRunner['agent-chats'].claim.post()).data!.message).toBeNull();
+      await Bun.sleep(1100);
+      const claims = await Promise.all([
+        asRunner['agent-chats'].claim.post(),
+        asRunner['agent-chats'].claim.post(),
+      ]);
+      const answers = claims.flatMap((claim) => (claim.data!.message ? [claim.data!.message] : []));
+      expect(answers).toHaveLength(1);
+      expect(answers[0]).toMatchObject({ id: first.messageId, attempts: 2 });
+      const events = await chatOf(asOwner, agent.id)
+        .chat({ messageId: first.messageId })
+        .events.get();
+      expect(events.data!.items).toEqual([]);
+      await Bun.sleep(1100);
+      expect((await asRunner['agent-chats'].claim.post()).data!.message).toMatchObject({
+        id: next.messageId,
+        attempts: 1,
+      });
+      const failed = await chatOf(asOwner, agent.id)
+        .chat({ messageId: first.messageId })
+        .events.get();
+      expect(failed.data!).toMatchObject({
+        status: 'failed',
+        error: 'Runner did not report a result',
+      });
+    } finally {
+      if (previousLease === undefined) delete process.env.AGENT_CHAT_LEASE_SECONDS;
+      else process.env.AGENT_CHAT_LEASE_SECONDS = previousLease;
+      if (previousAttempts === undefined) delete process.env.AGENT_CHAT_MAX_ATTEMPTS;
+      else process.env.AGENT_CHAT_MAX_ATTEMPTS = previousAttempts;
+    }
+  });
+
+  it('claims another thread when an exhausted head expires during a long poll', async () => {
+    const previousLease = process.env.AGENT_CHAT_LEASE_SECONDS;
+    const previousAttempts = process.env.AGENT_CHAT_MAX_ATTEMPTS;
+    const previousWait = process.env.AGENT_CHAT_CLAIM_WAIT_MS;
+    process.env.AGENT_CHAT_LEASE_SECONDS = '1';
+    process.env.AGENT_CHAT_MAX_ATTEMPTS = '1';
+    process.env.AGENT_CHAT_CLAIM_WAIT_MS = '2500';
+    try {
+      const { asOwner, asRunner, agent } = await setup();
+      const first = (await send(asOwner, agent.id, 'First')).data!;
+      expect((await asRunner['agent-chats'].claim.post()).data!.message).toMatchObject({
+        id: first.messageId,
+        attempts: 1,
+      });
+      const waiting = asRunner['agent-chats'].claim.post();
+      try {
+        await Bun.sleep(1100);
+        const expired = await chatOf(asOwner, agent.id)
+          .chat({ messageId: first.messageId })
+          .events.get();
+        expect(expired.data!.status).toBe('streaming');
+        const other = (await send(asOwner, agent.id, 'Other')).data!;
+        expect((await waiting).data!.message).toMatchObject({
+          id: other.messageId,
+          threadId: other.threadId,
+          attempts: 1,
+        });
+      } finally {
+        await waiting;
+      }
+    } finally {
+      if (previousLease === undefined) delete process.env.AGENT_CHAT_LEASE_SECONDS;
+      else process.env.AGENT_CHAT_LEASE_SECONDS = previousLease;
+      if (previousAttempts === undefined) delete process.env.AGENT_CHAT_MAX_ATTEMPTS;
+      else process.env.AGENT_CHAT_MAX_ATTEMPTS = previousAttempts;
+      if (previousWait === undefined) delete process.env.AGENT_CHAT_CLAIM_WAIT_MS;
+      else process.env.AGENT_CHAT_CLAIM_WAIT_MS = previousWait;
+    }
   });
 
   it('reports events back with a cursor and builds the answer text from them', async () => {
@@ -420,6 +722,85 @@ describe('external agent chat', () => {
     expect((await chatOf(asOwner, agent.id).threads.get()).data!.items).toEqual([]);
   });
 
+  it('finds a conversation by its title and by the text of both roles', async () => {
+    const { asOwner, asRunner, agent } = await setup();
+    const byTitle = await send(asOwner, agent.id, 'the launch plan');
+    await answer(asRunner, 'noted');
+    // Asked in the second turn, so the title of that conversation does not match too.
+    const byQuestion = await send(asOwner, agent.id, 'status update');
+    await answer(asRunner, 'all green');
+    await send(asOwner, agent.id, 'when is the launch?', byQuestion.data!.threadId);
+    await answer(asRunner, 'in May');
+    const byAnswer = await send(asOwner, agent.id, 'what is next?');
+    await answer(asRunner, 'the launch, then the retro');
+    await send(asOwner, agent.id, 'invoices');
+    await answer(asRunner, 'paid');
+
+    const res = await chatOf(asOwner, agent.id).threads.get({ query: { q: 'launch' } });
+    expect(res.status).toBe(200);
+    // Ranked: the title first, then the member's own message, then the agent's reply.
+    expect(res.data!.items.map((t) => t.id)).toEqual([
+      byTitle.data!.threadId,
+      byQuestion.data!.threadId,
+      byAnswer.data!.threadId,
+    ]);
+    expect(res.data!.items.map((t) => t.match)).toEqual(['title', 'user', 'assistant']);
+    expect(res.data!.items[2].snippet).toContain('the launch, then the retro');
+  });
+
+  it("does not match a tool call's arguments or result", async () => {
+    const { asOwner, asRunner, agent } = await setup();
+    await send(asOwner, agent.id, 'what is left?');
+    const claimed = (await asRunner['agent-chats'].claim.post()).data!.message!;
+    await asRunner['agent-chats']({ messageId: claimed.id }).events.post({
+      events: [
+        { type: 'TOOL_CALL_START', toolCallId: 'call-1', toolCallName: 'list_issues' },
+        { type: 'TOOL_CALL_ARGS', toolCallId: 'call-1', delta: '{"status":"kryptonite"}' },
+        { type: 'TOOL_CALL_RESULT', messageId: 'm1', toolCallId: 'call-1', content: 'kryptonite' },
+        { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm1', delta: 'Two things.' },
+      ],
+    });
+    await asRunner['agent-chats']({ messageId: claimed.id }).result.post({ status: 'success' });
+
+    const res = await chatOf(asOwner, agent.id).threads.get({ query: { q: 'kryptonite' } });
+    expect(res.data!.items).toEqual([]);
+  });
+
+  it('stars a conversation, lists it as its own group, and drops the star with it', async () => {
+    const { asOwner, agent } = await setup();
+    const kept = await send(asOwner, agent.id, 'kept');
+    const plain = await send(asOwner, agent.id, 'plain');
+    const thread = chatOf(asOwner, agent.id).threads({ threadId: kept.data!.threadId });
+
+    expect((await thread.favorite.put()).status).toBe(204);
+
+    const favorites = await chatOf(asOwner, agent.id).threads.get({ query: { favorites: true } });
+    expect(favorites.data!.items.map((t) => t.id)).toEqual([kept.data!.threadId]);
+    expect(favorites.data!.nextPage).toBeNull();
+
+    // The group holds it, so the list below no longer shows it a second time.
+    const rest = await chatOf(asOwner, agent.id).threads.get();
+    expect(rest.data!.items.map((t) => t.id)).toEqual([plain.data!.threadId]);
+
+    expect((await thread.favorite.delete()).status).toBe(204);
+    expect(
+      (await chatOf(asOwner, agent.id).threads.get({ query: { favorites: true } })).data!.items,
+    ).toEqual([]);
+    const back = await chatOf(asOwner, agent.id).threads.get();
+    expect(back.data!.items.map((t) => t.id)).toEqual([plain.data!.threadId, kept.data!.threadId]);
+  });
+
+  it("404s starring another member's conversation", async () => {
+    const { asOwner, agent } = await setup();
+    const sent = await send(asOwner, agent.id, 'Private question');
+    const asMember = await addProjectMember(asOwner, 'MKT');
+
+    expect(
+      (await chatOf(asMember, agent.id).threads({ threadId: sent.data!.threadId }).favorite.put())
+        .status,
+    ).toBe(404);
+  });
+
   it("refuses another member's thread and another agent's answer", async () => {
     const { asOwner, asRunner, agent } = await setup();
     const sent = await send(asOwner, agent.id, 'Private question');
@@ -431,9 +812,11 @@ describe('external agent chat', () => {
       (await chatOf(asMember, agent.id).chat({ messageId: answer.id }).events.get()).status,
     ).toBe(404);
 
-    const other = await asOwner
-      .projects({ projectKey: 'MKT' })
-      ['ai-agents'].post({ name: 'Other Bot', username: 'other', kind: 'external' });
+    const other = await createAgent(asOwner, 'MKT', {
+      name: 'Other Bot',
+      username: 'other',
+      kind: 'external',
+    });
     const asOtherRunner = apiKeyApi(other.data!.apiKey!);
     expect(
       (
@@ -446,9 +829,11 @@ describe('external agent chat', () => {
 
   it('takes chat messages only for an external agent, and only from its own key', async () => {
     const { asOwner, agent } = await setup();
-    const internal = await asOwner
-      .projects({ projectKey: 'MKT' })
-      ['ai-agents'].post({ name: 'In Bot', username: 'in', kind: 'internal' });
+    const internal = await createAgent(asOwner, 'MKT', {
+      name: 'In Bot',
+      username: 'in',
+      kind: 'internal',
+    });
 
     // An internal agent is chatted with through /run and /run/stream instead.
     expect((await send(asOwner, internal.data!.agent.id, 'Hello')).status).toBe(400);
@@ -459,7 +844,10 @@ describe('external agent chat', () => {
 
   it("keeps an owner-scoped agent's chat to its owner", async () => {
     const { asOwner, agent } = await setup();
-    await chatOf(asOwner, agent.id).patch({ runnerScope: 'owner' });
+    await asOwner
+      .teams({ teamId: await teamOf(asOwner, 'MKT') })
+      ['ai-agents']({ agentId: agent.id })
+      .patch({ runnerScope: 'owner' });
     const asMember = await addProjectMember(asOwner, 'MKT');
 
     expect((await send(asMember, agent.id, 'Hello')).status).toBe(403);

@@ -39,7 +39,7 @@ export default function AccountPreferencesNav() {
       activeId={activeId}
       label={t('label')}
       onJump={jump}
-      className="top-16"
+      className="sticky top-16 hidden w-44 shrink-0 self-start lg:block"
     />
   );
 }

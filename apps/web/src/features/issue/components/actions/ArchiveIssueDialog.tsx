@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { type Issue, type ProjectDetail, type SubtaskDisposition } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { Issue, SubtaskDisposition } from '@/lib/api/endpoints/issues';
 import { dispositionReady, subtaskCount } from '@/utils/subtasks';
 import { useArchiveIssue } from '@/services/issues.service';
 import ConfirmDialog from '@/components/common/overlay/ConfirmDialog';
@@ -20,7 +21,7 @@ export default function ArchiveIssueDialog({
   onArchived?: () => void;
 }) {
   const t = useTranslations('issue.actions');
-  const archiveIssue = useArchiveIssue(project.project.key);
+  const archiveIssue = useArchiveIssue(project.project.ref);
   const subtasks = subtaskCount(project.issues, [issue.id]);
   const [disposition, setDisposition] = useState<SubtaskDisposition | null>(null);
 
@@ -40,7 +41,7 @@ export default function ArchiveIssueDialog({
         {t('archiveDescription', { issue: issue.identifier })}
       </p>
       <SubtaskDisposalChoice
-        projectKey={project.project.key}
+        projectKey={project.project.ref}
         action="archive"
         count={subtasks}
         removedIssueIds={[issue.id]}

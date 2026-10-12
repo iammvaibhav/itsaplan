@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { AiAgent } from '@/lib/api';
+import type { AiAgent } from '@/lib/api/endpoints/agents';
 import { useAgentChat } from '@/hooks/useAgentChat';
 import { useAgentThreadMessagesQuery } from '@/services/aiAgents.service';
 import { qk } from '@/services/queryKeys';
@@ -24,6 +24,7 @@ export function AiChatThread({
   onThreadCreated,
   onStateChange,
   composerStart,
+  composerEnd,
 }: {
   projectKey: string;
   agent: AiAgent;
@@ -34,6 +35,8 @@ export function AiChatThread({
   onStateChange?: (state: { running: boolean; hasMessages: boolean }) => void;
   // A control of the host that belongs to this conversation, put next to its composer.
   composerStart?: ReactNode;
+  // What the host says about this conversation, put at the end of the same row.
+  composerEnd?: ReactNode;
 }) {
   const {
     messages,
@@ -107,6 +110,7 @@ export function AiChatThread({
   return (
     <AgentChatPanel
       agent={agent}
+      projectKey={projectKey}
       messages={messages}
       status={status}
       activeTool={activeTool}
@@ -115,6 +119,7 @@ export function AiChatThread({
       onStop={stop}
       onRemovePending={removePending}
       composerStart={composerStart}
+      composerEnd={composerEnd}
       hasEarlierMessages={messagesQuery.hasNextPage}
       isLoadingEarlier={messagesQuery.isFetchingNextPage}
       onLoadEarlier={() => void messagesQuery.fetchNextPage()}

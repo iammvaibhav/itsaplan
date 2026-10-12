@@ -6,6 +6,7 @@ import { authContext } from '#shared/auth-context';
 import { requireUser } from '#shared/access';
 import { HttpError } from '#shared/lib';
 import { accessErrors, commonErrors } from '#shared/responses';
+import { paginate } from '#shared/pagination';
 import { transferCycleIssues } from '#modules/issues/service';
 import {
   CycleListResponse,
@@ -43,7 +44,12 @@ export const cycleRoutes = new Elysia({
   // Guard for routes that address a cycle by its own id (no :projectKey in the
   // path). Set `cycle: "<action>"` in the route options.
   .macro({
-    cycle: entityGuard('cycles', 'Cycle not found', (p) => getCycleProjectId(Number(p.cycleId))),
+    cycle: entityGuard(
+      'cycles',
+      'Cycle not found',
+      (p) => getCycleProjectId(Number(p.cycleId)),
+      'cycles',
+    ),
   })
 
   .get(
@@ -53,6 +59,7 @@ export const cycleRoutes = new Elysia({
     {
       query: listCyclesQuery,
       permission: ['cycles', 'read'],
+      feature: 'cycles',
       response: { 200: CycleListResponse, ...commonErrors },
       detail: {
         summary: 'List cycles',
@@ -73,6 +80,7 @@ export const cycleRoutes = new Elysia({
     },
     {
       permission: ['work_items', 'read'],
+      feature: 'cycles',
       response: { 200: CycleOptionListResponse, ...accessErrors },
       detail: {
         summary: 'List cycle options',
@@ -83,18 +91,11 @@ export const cycleRoutes = new Elysia({
 
   .get(
     '/projects/:projectKey/cycles/completed',
-    async ({ project, query }) => {
-      const page = query.page ?? 1;
-      const pageSize = query.pageSize ?? 25;
-      const { items, total } = await listCompletedCycles(project.id, {
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-      });
-      return { items, total, page, pageSize };
-    },
+    ({ project, query }) => paginate(query, (window) => listCompletedCycles(project.id, window)),
     {
       query: completedCyclesQuery,
       permission: ['cycles', 'read'],
+      feature: 'cycles',
       response: { 200: CyclePageResponse, ...commonErrors },
       detail: {
         summary: 'List completed cycles',
@@ -112,6 +113,7 @@ export const cycleRoutes = new Elysia({
     {
       body: createCycleBody,
       permission: ['cycles', 'create'],
+      feature: 'cycles',
       response: { 201: CycleResponse, ...commonErrors },
       detail: {
         summary: 'Create a cycle',

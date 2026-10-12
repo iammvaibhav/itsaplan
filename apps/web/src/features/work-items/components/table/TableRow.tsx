@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useDndContext, useDraggable, useDroppable } from '@dnd-kit/core';
-import { type ProjectDetail, type BoardIssue } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { BoardIssue } from '@/lib/api/endpoints/issues';
 import { type Maps } from '@/utils/project';
 import { useIsPhone } from '@/hooks/useIsPhone';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -8,7 +9,9 @@ import { isBlocked } from '@/utils/issueLinks';
 import { cn } from '@/lib/utils';
 import IssueContextMenu from '@/features/issue/components/actions/IssueContextMenu';
 import { DropLine } from '../shared/DropLine';
+import { IssueIdentifier } from '../shared/IssueIdentifier';
 import { SubtaskProgress } from '../shared/SubtaskProgress';
+import { useSubtaskFold } from '../../context/useSubtasks';
 import { columnKey, type OrderedColumn } from '../../utils/table';
 import { TableBuiltinCell } from './TableBuiltinCell';
 import { TableCustomCell } from './TableCustomCell';
@@ -50,10 +53,10 @@ export function TableRow({
   // Opens a linked issue from a sub-row.
   onOpenIssue: (id: number) => void;
 }) {
-  // Drag is disabled on phones so a touch scrolls the list instead of picking up
-  // a row (see the `sm:touch-none` below), and without work_items edit (reordering
-  // is an issue edit).
+  // Drag is disabled on phones, and without work_items edit (reordering is an
+  // issue edit).
   const { can } = usePermissions();
+  const subtasks = useSubtaskFold();
   const {
     setNodeRef: dragRef,
     attributes,
@@ -82,9 +85,12 @@ export function TableRow({
         ref={mergedRef}
         {...attributes}
         {...listeners}
-        onClick={onClick}
+        onClick={(e) => {
+          e.preventDefault();
+          onClick();
+        }}
         className={cn(
-          'relative grid cursor-grab gap-3 border-b py-2 pr-4 text-sm transition-colors sm:touch-none',
+          'relative grid cursor-grab gap-3 border-b py-2 pr-4 text-sm transition-colors',
           isBlocked(issue) ? 'row-blocked' : 'hover:bg-accent/40',
           alignTop ? 'items-start' : 'items-center',
           indented ? 'pl-9' : 'pl-4',
@@ -95,14 +101,21 @@ export function TableRow({
         {showDropLine && <DropLine className="top-0" />}
         <div className="flex min-w-0 items-center gap-2">
           {showId && (
-            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-              {issue.identifier}
-            </span>
+            <IssueIdentifier
+              issue={issue}
+              className="text-xs text-muted-foreground tabular-nums"
+              onOpenParent={onOpenIssue}
+            />
           )}
           <span dir="auto" className="truncate text-foreground">
             {issue.title}
           </span>
-          <SubtaskProgress issueId={issue.id} maps={maps} />
+          <SubtaskProgress
+            issueId={issue.id}
+            maps={maps}
+            open={subtasks.open}
+            onToggle={subtasks.toggle}
+          />
         </div>
 
         {orderedColumns.map((c) =>
@@ -113,7 +126,9 @@ export function TableRow({
           ),
         )}
 
-        <TableRowSubtasks issueId={issue.id} maps={maps} onOpenIssue={onOpenIssue} />
+        {subtasks.open && (
+          <TableRowSubtasks issueId={issue.id} maps={maps} onOpenIssue={onOpenIssue} />
+        )}
         <TableRowLinks links={issue.links} maps={maps} onOpenIssue={onOpenIssue} />
       </div>
     </IssueContextMenu>

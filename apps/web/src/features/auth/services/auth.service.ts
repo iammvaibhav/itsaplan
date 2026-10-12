@@ -1,7 +1,6 @@
 import {
   signIn,
   signUp,
-  signOut,
   requestPasswordReset,
   resetPassword,
   sendVerificationEmail,
@@ -43,9 +42,10 @@ export async function signInWithPassword(input: {
   throw new Error(message);
 }
 
-// autoSignIn (set in @repo/auth) signs the user in right after sign-up. The display
-// name is derived from the email; the planner does not use it yet. callbackURL is
-// where the confirmation link lands when the instance sends one.
+// autoSignIn (set in @repo/auth) signs the user in right after sign-up, unless the
+// instance requires a confirmed address, in which case no session is opened. The
+// display name is derived from the email; the planner does not use it yet.
+// callbackURL is where the confirmation link lands when the instance sends one.
 //
 // On an invite-only instance the API rejects the sign-up unless the address has a
 // pending project invite, and the thrown message says so.
@@ -103,13 +103,6 @@ export async function resendVerificationEmail(email: string): Promise<void> {
   if (result.error) throw new Error(result.error.message ?? '');
 }
 
-// Drops the session created by autoSignIn right after sign-up, used when the
-// instance requires a confirmed address: the account exists but must not be usable
-// until the link in the email is opened.
-export async function signOutUnverified(): Promise<void> {
-  await signOut();
-}
-
 // Starts the Google round trip. Unlike every other call here this one navigates away
 // instead of returning a result: better-auth redirects to Google, and Google comes
 // back to the API callback, which then sends the browser to one of these two URLs.
@@ -120,6 +113,18 @@ export async function signOutUnverified(): Promise<void> {
 export async function signInWithGoogle(): Promise<void> {
   const result = await signIn.social({
     provider: 'google',
+    callbackURL: appUrl('/'),
+    errorCallbackURL: appUrl('/login'),
+  });
+  if (result.error) throw new Error(result.error.message ?? '');
+}
+
+// Starts the round trip through the instance's own OIDC provider. Same shape as the
+// Google call above: it navigates away, and both callback URLs must be on the web
+// origin. The provider id is fixed — the instance has exactly one.
+export async function signInWithOidc(): Promise<void> {
+  const result = await signIn.oauth2({
+    providerId: 'oidc',
     callbackURL: appUrl('/'),
     errorCallbackURL: appUrl('/login'),
   });

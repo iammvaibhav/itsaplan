@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { WEBHOOK_EVENT_TYPES, type Webhook, type WebhookEventType } from '@/lib/api';
+import {
+  WEBHOOK_EVENT_TYPES,
+  type Webhook,
+  type WebhookEventType,
+} from '@/lib/api/endpoints/webhooks';
 import Modal from '@/components/common/overlay/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,7 +62,7 @@ export function SettingsWebhookDialog({
     <Modal
       title={t(initial ? 'dialogEdit' : 'dialogNew')}
       description={t('dialogHint')}
-      projectKey={projectKey}
+      scope={projectKey}
       onClose={onClose}
       wide
     >

@@ -11,7 +11,7 @@ exposes one or more _tools_.
 - **Tool**: one callable action. Declares an `inputSchema` (what the model passes at
   call time) and an `execute` that runs it with the decrypted credential.
 
-A project can store several credentials per integration, and a configured tool binds
+A team can store several credentials per integration, and a configured tool binds
 one tool to one credential. That way two Jina keys can back two copies of the same
 tool.
 

@@ -1,10 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import type { NotificationEncryption, InstanceEmailSettings } from '@/lib/api';
+import type { InstanceEmailSettings, InstanceEmailSettingsPatch } from '@/lib/api/endpoints/god';
+import type { NotificationEncryption } from '@/lib/api/endpoints/notificationSettings';
 import type { EmailProvider } from '@/components/common/inputs/ProviderToggle';
 import { toPositiveInt } from '@/lib/utils';
-import { useUpdateInstanceEmailSettings } from '../services/god.service';
+import {
+  useTestInstanceEmailSettings,
+  useUpdateInstanceEmailSettings,
+} from '../services/god.service';
 
 export interface GodEmailForm {
   provider: EmailProvider;
@@ -32,7 +36,10 @@ export interface GodEmailForm {
   settings: InstanceEmailSettings;
   dirty: boolean;
   saving: boolean;
+  testable: boolean;
+  testing: boolean;
   save: () => Promise<void>;
+  test: () => Promise<string>;
 }
 
 // Form state for the instance mail provider (SMTP or Resend). Shared between the
@@ -44,6 +51,7 @@ export interface GodEmailForm {
 // back on.
 export function useGodEmailForm(settings: InstanceEmailSettings): GodEmailForm {
   const update = useUpdateInstanceEmailSettings();
+  const testEmail = useTestInstanceEmailSettings();
 
   const initialProvider: EmailProvider = settings.resend.enabled ? 'resend' : 'smtp';
   const initialEnabled = settings.smtp.enabled || settings.resend.enabled;
@@ -75,9 +83,16 @@ export function useGodEmailForm(settings: InstanceEmailSettings): GodEmailForm {
     from !== settings.from ||
     allowProjects !== settings.allowProjects ||
     (provider === 'smtp' ? smtpDirty : apiKey.length > 0);
+  const testable =
+    enabled &&
+    (provider === 'smtp'
+      ? host.trim().length > 0 &&
+        (username.trim().length === 0 || password.length > 0 || settings.smtp.hasPassword) &&
+        (from.trim().length > 0 || username.trim().length > 0)
+      : (apiKey.length > 0 || settings.resend.hasApiKey) && from.trim().length > 0);
 
-  async function save() {
-    await update.mutateAsync({
+  function currentPatch(): InstanceEmailSettingsPatch {
+    return {
       from: from.trim(),
       allowProjects,
       smtp: {
@@ -93,9 +108,18 @@ export function useGodEmailForm(settings: InstanceEmailSettings): GodEmailForm {
         enabled: provider === 'resend' && enabled,
         ...(apiKey.length > 0 ? { apiKey } : {}),
       },
-    });
+    };
+  }
+
+  async function save() {
+    await update.mutateAsync(currentPatch());
     setPassword('');
     setApiKey('');
+  }
+
+  async function test() {
+    const result = await testEmail.mutateAsync(currentPatch());
+    return result.recipient;
   }
 
   return {
@@ -124,6 +148,9 @@ export function useGodEmailForm(settings: InstanceEmailSettings): GodEmailForm {
     settings,
     dirty,
     saving: update.isPending,
+    testable,
+    testing: testEmail.isPending,
     save,
+    test,
   };
 }

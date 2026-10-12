@@ -66,7 +66,7 @@ async function memberIdsOf(boardId: number): Promise<string[]> {
 export async function listNoteBoards(
   projectId: number,
   userId: string,
-  opts: { q?: string; limit: number; offset: number },
+  opts: { q?: string } = {},
 ): Promise<NoteBoardSummary[]> {
   const visible = and(
     eq(noteBoard.projectId, projectId),
@@ -96,9 +96,7 @@ export async function listNoteBoards(
     })
     .from(noteBoard)
     .where(where)
-    .orderBy(desc(noteBoard.updatedAt), noteBoard.id)
-    .limit(opts.limit)
-    .offset(opts.offset);
+    .orderBy(desc(noteBoard.updatedAt), noteBoard.id);
 
   if (rows.length === 0) return [];
 

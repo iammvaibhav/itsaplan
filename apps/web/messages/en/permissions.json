@@ -1,5 +1,4 @@
 {
-  "viewPermissions": "View permissions",
   "none": "No permissions granted",
   "grantedCount": "{count, plural, one {# permission} other {# permissions}} granted",
   "resources": {
@@ -7,6 +6,7 @@
     "initiatives": "Initiatives",
     "cycles": "Cycles",
     "dashboards": "Dashboards",
+    "documents": "Docs",
     "views": "Work item views",
     "members_invite": "Invites",
     "members_manage": "Members",
@@ -17,11 +17,15 @@
     "integrations": "Integrations",
     "agent_skills": "Agent skills",
     "agent_tools": "Agent tools",
+    "agent_usage": "Agent usage",
     "custom_fields": "Custom fields",
+    "issue_templates": "Issue templates",
     "workflow_config": "Workflow configuration",
     "actions": "Actions",
     "webhooks": "Webhooks",
+    "repositories": "Repositories",
     "note_boards": "Note boards",
+    "import_export": "Import/Export",
     "danger_zone": "Danger zone"
   },
   "actions": {
@@ -33,6 +37,7 @@
   "groups": {
     "workItems": "Work items",
     "dashboards": "Dashboards",
+    "documents": "Docs",
     "notes": "Notes",
     "ai": "AI",
     "configuration": "Configuration",
@@ -42,5 +47,7 @@
   },
   "resourceColumn": "Resource",
   "allowed": "allowed",
-  "notAllowed": "not allowed"
+  "notAllowed": "not allowed",
+  "accessHeading": "Access to this project",
+  "joined": "joined {date}"
 }

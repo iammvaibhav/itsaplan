@@ -5,11 +5,13 @@ import {
   CircleDot,
   CirclePlus,
   FileText,
+  FolderInput,
   Gauge,
   GitPullRequest,
   Link2,
   ListChecks,
   ListTree,
+  MessageSquare,
   Pencil,
   RefreshCw,
   Shapes,
@@ -20,7 +22,7 @@ import {
   UserRound,
   type LucideIcon,
 } from 'lucide-react';
-import { type ActivityAction } from '@/lib/api';
+import type { ActivityAction } from '@/lib/api/endpoints/activity';
 
 // The icon of each activity feed event. Its verb phrase is built by
 // useActivityText, which needs the reader's language.
@@ -45,6 +47,7 @@ export const ACTION_ICON: Record<ActivityAction, LucideIcon> = {
   parent: ListTree,
   subtask_add: ListTree,
   subtask_remove: ListTree,
+  moved: FolderInput,
   checklist_add: ListChecks,
   checklist_rename: ListChecks,
   checklist_remove: ListChecks,
@@ -58,4 +61,6 @@ export const ACTION_ICON: Record<ActivityAction, LucideIcon> = {
   github_pr: GitPullRequest,
   agent_started: Bot,
   agent_finished: Bot,
+  comment_edited: MessageSquare,
+  comment_deleted: MessageSquare,
 };

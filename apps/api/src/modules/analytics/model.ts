@@ -1,5 +1,6 @@
 import { t } from 'elysia';
 import { ActivityPayloadResponse } from '#shared/activity';
+import { agentRunTrigger } from '#modules/agents/model';
 
 export const StatsDto = t.Object({
   open: t.Number(),
@@ -26,6 +27,28 @@ const ThroughputWeek = t.Object({
   week: t.String(),
   created: t.Number(),
   closed: t.Number(),
+});
+
+const BurnupDay = t.Object({
+  date: t.String(),
+  scope: t.Number(),
+  started: t.Number(),
+  completed: t.Number(),
+});
+
+export const BurnupDto = t.Object({
+  days: t.Array(BurnupDay),
+  forecast: t.Object({
+    windowDays: t.Number(),
+    velocityPerDay: t.Number(),
+    scopeGrowthPerDay: t.Number(),
+    remaining: t.Number(),
+    projectedScope: t.Number(),
+    projectedDate: t.Nullable(t.String()),
+    optimisticDate: t.Nullable(t.String()),
+    pessimisticDate: t.Nullable(t.String()),
+  }),
+  targetDate: t.Nullable(t.String()),
 });
 
 const ActivityItem = t.Object({
@@ -55,13 +78,7 @@ export const ActivityPage = t.Object({
 const AgentRunFeedItem = t.Object({
   id: t.Number(),
   status: t.String(),
-  trigger: t.Union([
-    t.Literal('mention'),
-    t.Literal('delegation'),
-    t.Literal('field'),
-    t.Literal('schedule'),
-    t.Literal('manual'),
-  ]),
+  trigger: agentRunTrigger,
   agentId: t.Number(),
   agentName: t.String(),
   issueId: t.Nullable(t.Number()),
@@ -117,11 +134,18 @@ export const breakdownQuery = t.Object({
 });
 
 export const pulseQuery = t.Object({
+  scope: t.Optional(t.Union([t.Literal('project'), t.Literal('me')])),
   unit: t.Optional(t.Union([t.Literal('hour'), t.Literal('day'), t.Literal('week')])),
   columns: t.Optional(t.Numeric()),
 });
 
 export const throughputQuery = t.Object({ weeks: t.Optional(t.Numeric()) });
+
+export const burnupQuery = t.Object({
+  days: t.Optional(t.Numeric()),
+  initiativeId: t.Optional(t.Numeric()),
+  forecastWeeks: t.Optional(t.Numeric()),
+});
 
 export const activityQuery = t.Object({
   limit: t.Optional(t.Numeric()),

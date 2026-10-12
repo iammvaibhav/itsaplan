@@ -24,9 +24,9 @@
   "copyGroups": {
     "workflow": "Рабочий процесс",
     "automation": "Автоматизация",
-    "project": "Проект",
     "views": "Представления",
-    "aiTeam": "AI-команда"
+    "aiTeam": "AI-команда",
+    "knowledge": "Знания"
   },
   "copyItems": {
     "states": "Статусы",
@@ -35,14 +35,10 @@
     "customFields": "Пользовательские поля",
     "views": "Представления",
     "dashboards": "Дашборды",
+    "documents": "Документы",
     "actions": "Действия",
     "configuration": "Конфигурация",
-    "roles": "Роли",
-    "notificationProviders": "Провайдеры уведомлений",
     "webhooks": "Вебхуки",
-    "integrations": "Интеграции",
-    "tools": "Инструменты",
-    "skills": "Навыки",
     "agents": "Агенты",
     "schedules": "Расписания"
   },
@@ -50,5 +46,6 @@
   "copyTitle": "Копировать проект «{name}»",
   "create": "Создать проект",
   "copyAction": "Копировать проект",
+  "defaultAgents": "В этот проект добавятся агенты: {names}",
   "copyName": "{name} — копия"
 }

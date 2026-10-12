@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { type CustomField, type CustomFieldType, type MemberScope } from '@/lib/api';
+import type { CustomField, CustomFieldType, MemberScope } from '@/lib/api/endpoints/customFields';
 import { cn } from '@/lib/utils';
 import Modal from '@/components/common/overlay/Modal';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import {
   MEMBER_SCOPES,
   useFieldTypeLabel,
 } from '../../utils/fieldTypes';
-import FieldChangeWarning from './FieldChangeWarning';
+import SettingsWarningBanner from '../SettingsWarningBanner';
 import FieldOptionsEditor, { parseOptionValues, type OptionDraft } from './FieldOptionsEditor';
 
 export interface FieldFormValues {
@@ -151,7 +151,7 @@ export default function SettingsCustomFieldDialog({
                 );
               })}
             </div>
-            {typeChanged && <FieldChangeWarning>{t('typeChangeWarning')}</FieldChangeWarning>}
+            {typeChanged && <SettingsWarningBanner>{t('typeChangeWarning')}</SettingsWarningBanner>}
           </div>
 
           {holdsOptions(fieldType) && (
@@ -163,7 +163,7 @@ export default function SettingsCustomFieldDialog({
                 onPendingChange={setPendingOptions}
               />
               {optionsRemoved && (
-                <FieldChangeWarning>{t('optionsRemovedWarning')}</FieldChangeWarning>
+                <SettingsWarningBanner>{t('optionsRemovedWarning')}</SettingsWarningBanner>
               )}
             </div>
           )}
@@ -188,7 +188,9 @@ export default function SettingsCustomFieldDialog({
                   );
                 })}
               </div>
-              {scopeNarrowed && <FieldChangeWarning>{t('memberScopeWarning')}</FieldChangeWarning>}
+              {scopeNarrowed && (
+                <SettingsWarningBanner>{t('memberScopeWarning')}</SettingsWarningBanner>
+              )}
             </div>
           )}
         </div>

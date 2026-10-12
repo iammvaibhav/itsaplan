@@ -40,7 +40,7 @@ export default function NoteBoardNameDialog({
   const VisibilityIcon = VISIBILITY_ICON[visibility];
 
   return (
-    <Modal title={title} description={description} projectKey={projectKey} onClose={onClose}>
+    <Modal title={title} description={description} scope={projectKey} onClose={onClose}>
       <form
         className="space-y-5"
         onSubmit={(e) => {

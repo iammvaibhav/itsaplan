@@ -1,13 +1,13 @@
 import { Fragment, type ReactNode } from 'react';
 import { RefreshCw, Target } from 'lucide-react';
-import {
-  type CustomField,
-  type ProjectDetail,
-  type IssueDetail as IssueDetailRow,
-  type IssueFieldValueInput,
-  type IssuePatch,
-  type IssueWatcher,
-} from '@/lib/api';
+import type { CustomField } from '@/lib/api/endpoints/customFields';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type {
+  IssueDetail as IssueDetailRow,
+  IssueFieldValueInput,
+  IssuePatch,
+  IssueWatcher,
+} from '@/lib/api/endpoints/issues';
 import AssigneeSelect from '@/components/common/fields/AssigneeSelect';
 import DatePill from '@/components/common/fields/DatePill';
 import { Pill } from '@/components/common/fields/Pill';
@@ -28,7 +28,8 @@ import IssueWatchers from './IssueWatchers';
 import IssueSectionHeading from './IssueSectionHeading';
 import IssuePropertyRow from './IssuePropertyRow';
 import IssuePropertyGroupHeading from './IssuePropertyGroupHeading';
-import { type Embeddable } from '../../utils/attachmentEmbed';
+import { type Embeddable } from '@/components/common/editor/attachmentEmbed';
+import { parseDate } from '@/utils/dates';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 
@@ -80,6 +81,11 @@ export default function IssueProperties({
   const t = useTranslations('issue.fields');
   const hasMembers = project.assignees.some((a) => a.kind === 'member');
   const hasAgents = project.assignees.some((a) => a.kind === 'agent');
+  // The calendars grey out days that would put one date on the wrong side of the
+  // other: the start no later than the due date, the due date no earlier than the
+  // start. Equal dates are allowed.
+  const latestStart = parseDate(issue.dueDate);
+  const earliestDue = parseDate(issue.startDate);
   const groups: {
     key: 'groupState' | 'groupPeople' | 'groupPlanning' | 'groupLabels' | 'groupCustom';
     rows: ReactNode[];
@@ -143,7 +149,14 @@ export default function IssueProperties({
 
         watchers && (
           <IssuePropertyRow key="watching" label={t('watching')}>
-            <IssueWatchers issueId={issue.id} watchers={watchers} />
+            <IssueWatchers
+              issueId={issue.id}
+              watchers={watchers}
+              members={project.assignees.filter(
+                (assignee) => assignee.kind === 'member' && assignee.canReadWorkItems,
+              )}
+              canManage={!readOnly}
+            />
           </IssuePropertyRow>
         ),
       ],
@@ -164,7 +177,7 @@ export default function IssueProperties({
               </ReadOnlyPill>
             ) : (
               <InitiativeSelect
-                projectKey={project.project.key}
+                projectKey={project.project.ref}
                 value={issue.initiative?.id ?? null}
                 onChange={(id) => onPatch({ initiativeId: id })}
               />
@@ -186,7 +199,7 @@ export default function IssueProperties({
             ) : (
               <div className="flex min-w-0 items-center gap-1.5">
                 <CycleSelect
-                  projectKey={project.project.key}
+                  projectKey={project.project.ref}
                   value={issue.cycle}
                   onChange={(cycle) => onPatch({ cycleId: cycle?.id ?? null })}
                 />
@@ -233,6 +246,7 @@ export default function IssueProperties({
             placeholder={t('startDate')}
             onChange={(v) => onPatch({ startDate: v })}
             readOnly={readOnly}
+            disabled={latestStart ? { after: latestStart } : undefined}
           />
         </IssuePropertyRow>,
 
@@ -242,6 +256,7 @@ export default function IssueProperties({
             placeholder={t('dueDate')}
             onChange={(v) => onPatch({ dueDate: v })}
             readOnly={readOnly}
+            disabled={earliestDue ? { before: earliestDue } : undefined}
           />
         </IssuePropertyRow>,
       ],

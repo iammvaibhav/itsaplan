@@ -1,11 +1,12 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useInitiativeOptionsQuery } from '@/services/initiatives.service';
 import { useIssueBySeqQuery } from '@/services/issues.service';
+import { useTeamsQuery } from '@/services/teams.service';
 import { useAccountPreferences } from '@/services/preferences.service';
-import type { IssueOpenMode } from '@/lib/api';
+import type { IssueOpenMode } from '@/lib/api/endpoints/userPreferences';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useOverlays } from '@/hooks/useOverlays';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -15,6 +16,7 @@ import { useShellRoute } from '@/hooks/useShellRoute';
 import { useProjectRouteSync } from '@/hooks/useProjectRouteSync';
 import { projectPath, issuePath } from '@/utils/paths';
 import { defaultsFromFilters, type NewIssueDefaults } from '@/utils/project';
+import { IssueRefsProvider } from '@/context/issueRefs';
 import { ShellCtx, type ShellContext } from '@/context/shellContext';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import AppSidebar from '@/components/layout/AppSidebar';
@@ -26,8 +28,9 @@ import ShellOverlays from '@/components/layout/ShellOverlays';
 import { ChatPanel } from '@/features/ai-chat/components/panel/ChatPanel';
 import { useChatPanel } from '@/features/ai-chat/hooks/useChatPanel';
 import { useTranslations } from 'next-intl';
+import { ShellNotice } from '@/cloud';
 
-// The layout for /project/:projectKey and its children (the work items view and the
+// The layout for /:team/:projectKey and its children (the work items view and the
 // settings pages). It owns the project data, the view editor and the
 // project-level overlays, renders the sidebar + header chrome, and passes the
 // project state to the active child through React context (see lib/shellContext).
@@ -55,16 +58,29 @@ export default function Shell({
     errorMsg,
     forbidden,
   } = useShellProject(projectKey, route.activeViewId);
+  const teamId = project?.project.teamId;
+  const issueRefs = useMemo(
+    () => projects.filter((item) => item.teamId === teamId).map((item) => item.ref),
+    [projects, teamId],
+  );
 
   const initiativeOptions = useInitiativeOptionsQuery(projectKey).data ?? [];
   const { issueOpenMode, showChatByDefault } = useAccountPreferences();
   const overlays = useOverlays();
   const chatPanel = useChatPanel(projectKey, showChatByDefault);
+  // The agent a page asked to chat with, held until the panel has opened its tab.
+  const [chatAgentId, setChatAgentId] = useState<number | null>(null);
   // The Shell renders the context provider, so its own permission check reads the
   // project it loaded rather than the context.
   const { can } = usePermissions(project);
   const chatAvailable = !!projectKey && can('ai_agents', 'read');
+  const canCreateInitiative = !!project?.project.initiativesEnabled && can('initiatives', 'create');
   const issueQuery = useIssueBySeqQuery(projectKey, routeIssueSeq);
+  // A project is created in a team by its owner or manager: the current project's team
+  // when the user ranks so there, otherwise the first team they do.
+  const managedTeams = (useTeamsQuery().data ?? []).filter((one) => one.role !== 'member');
+  const newProjectTeamId = (managedTeams.find((one) => one.id === teamId) ?? managedTeams[0])?.id;
+  const openNewProject = newProjectTeamId != null ? () => overlays.setShowNewProject(true) : null;
 
   useProjectRouteSync({ projects, projectsLoaded, projectKey });
 
@@ -98,13 +114,12 @@ export default function Shell({
   useKeyboardShortcuts({
     hasProject: !!project,
     hasChat: chatAvailable,
-    projects,
     overlayOpen: overlays.anyOpen,
     onToggleCommand: () => overlays.setShowCommand((v) => !v),
-    onSelectProject: (key) => router.push(projectPath(key)),
     onChangeView: editor.changeView,
     onNewIssue: () => canCreateIssue && openNewIssue(),
-    onNewProject: () => overlays.setShowNewProject(true),
+    onNewInitiative: () => canCreateInitiative && overlays.setShowNewInitiative(true),
+    onNewProject: () => openNewProject?.(),
     onSettings: () => firstSettingsHref && router.push(firstSettingsHref),
     onToggleChat: chatPanel.toggle,
   });
@@ -124,7 +139,9 @@ export default function Shell({
         return;
       }
     }
-    overlays.setOpenIssueId(id);
+    // The issue the panel already shows closes it, so the card that opened the panel
+    // is the one that puts it away.
+    overlays.setOpenIssueId((current) => (current === id ? null : id));
   };
 
   const context: ShellContext = {
@@ -135,6 +152,10 @@ export default function Shell({
     customFields,
     onOpenIssue: openIssue,
     onAddIssue: addIssue,
+    onChatWithAgent: (agentId: number) => {
+      setChatAgentId(agentId);
+      chatPanel.openPanel();
+    },
   };
 
   return (
@@ -144,7 +165,6 @@ export default function Shell({
           projects={projects}
           currentProjectKey={projectKey}
           onSelectProject={(key) => router.push(projectPath(key))}
-          onNewProject={() => overlays.setShowNewProject(true)}
         />
         <SidebarInset className="min-w-0">
           <AppHeader
@@ -162,6 +182,7 @@ export default function Shell({
             chatActive={chatPanel.open}
             onToggleChat={chatPanel.toggle}
           />
+          <ShellNotice />
 
           {errorMsg && !forbidden && (
             <div className="border-b border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
@@ -178,7 +199,7 @@ export default function Shell({
                 projectsLoaded={projectsLoaded}
                 projectCount={projects.length}
               >
-                {children}
+                <IssueRefsProvider refs={issueRefs}>{children}</IssueRefsProvider>
               </ShellBody>
             </div>
 
@@ -191,6 +212,8 @@ export default function Shell({
                 onToggleMode={chatPanel.toggleMode}
                 onToggleFullscreen={chatPanel.toggleFullscreen}
                 onClose={chatPanel.toggle}
+                newChatAgentId={chatAgentId}
+                onNewChatHandled={() => setChatAgentId(null)}
               />
             )}
           </div>
@@ -209,14 +232,22 @@ export default function Shell({
           // Handled by the kanban board's selection provider (mounted only on the
           // board); the constant matches BOARD_SELECT_ALL_EVENT in useSelection.
           onSelectAll={() => window.dispatchEvent(new Event('board:select-all'))}
-          onNewProject={() => overlays.setShowNewProject(true)}
+          onNewInitiative={() => overlays.setShowNewInitiative(true)}
+          onNewProject={openNewProject}
           onSelectProject={(key) => router.push(projectPath(key))}
           onOpenIssue={(seq) => projectKey && router.push(issuePath(projectKey, seq))}
           onIssueDeleted={onIssueDeleted}
           onToggleChat={chatPanel.toggle}
         />
 
-        <ShellOverlays project={project} projectKey={projectKey} overlays={overlays} />
+        <IssueRefsProvider refs={issueRefs}>
+          <ShellOverlays
+            project={project}
+            projectKey={projectKey}
+            newProjectTeamId={newProjectTeamId}
+            overlays={overlays}
+          />
+        </IssueRefsProvider>
       </SidebarProvider>
     </ShellCtx.Provider>
   );

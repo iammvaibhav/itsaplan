@@ -7,7 +7,10 @@ import { useSession } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 import { useAppVersionQuery, useUpdateStatusQuery } from '@/services/updates.service';
 
-const UpdatesDialog = dynamic(() => import('@/components/layout/UpdatesDialog'), { ssr: false });
+// Fork: the release history pulls in markdown rendering; load it only when opened.
+const ReleaseHistory = dynamic(() => import('@/features/whats-new/components/ReleaseHistory'), {
+  ssr: false,
+});
 
 // The product mark at the bottom of both sidebars, with the running version under
 // it. Collapses to the mark alone when the sidebar is in icon mode.
@@ -74,7 +77,7 @@ export default function SidebarBrandFooter() {
       >
         {content}
       </button>
-      {showUpdates && <UpdatesDialog status={status} onClose={() => setShowUpdates(false)} />}
+      {showUpdates && <ReleaseHistory status={status} onClose={() => setShowUpdates(false)} />}
     </>
   );
 }

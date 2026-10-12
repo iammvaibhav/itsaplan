@@ -1,16 +1,12 @@
 {
   "updateAvailable": "يتوفّر تحديث",
   "releaseHistory": "سجلّ الإصدارات",
-  "runningUnknown": "تشغّل {current}. أحدث إصدار غير معروف.",
-  "runningOutdated": "تشغّل {current}. الأحدث هو {latest}.",
-  "runningLatest": "تشغّل {current}، وهو أحدث إصدار.",
-  "noReleases": "لم تُشحن ملاحظات إصدار مع هذه النسخة.",
+  "running": "تشغّل {current}.",
   "badgeRunning": "قيد التشغيل",
   "badgeNew": "جديد",
-  "earlier": "إصدارات سابقة",
   "check": "التحقّق من التحديثات",
   "checking": "جارٍ التحقّق",
-  "lastChecked": "آخر تحقّق {date}",
+  "lastChecked": "آخر تحقّق",
   "allReleases": "كل الإصدارات",
   "noNotes": "لا توجد ملاحظات لهذا الإصدار."
 }

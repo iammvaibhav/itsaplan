@@ -6,14 +6,14 @@ import { requireUser } from '#shared/access';
 import { noContent, sseFrame, sseResponse } from '#shared/http';
 import { HttpError } from '#shared/lib';
 import { commonErrors, errors } from '#shared/responses';
-import { getAgentById, isTriggerableBy } from '../core/service';
+import { getAgentInProject, isTriggerableBy } from '../core/service';
 import { runnerAuth } from '../runner-auth';
 import {
   ChatAckResponse,
   ChatEventsResponse,
   ClaimChatResponse,
   SendChatResponse,
-  agentParams,
+  projectAgentParams,
   chatEventsBody,
   chatEventsQuery,
   chatMessageParams,
@@ -49,7 +49,7 @@ const KEEPALIVE_MS = 15_000;
 // The agent this route acts on, or a 404. Only an external agent has a chat feed: an
 // internal one is run in-process by /run and /run/stream.
 async function requireExternalAgent(agentId: number, projectId: number) {
-  const agent = await getAgentById(agentId, projectId);
+  const agent = await getAgentInProject(agentId, projectId);
   if (!agent) throw new HttpError(404, 'Agent not found');
   if (agent.kind !== 'external') {
     throw new HttpError(400, 'Only external agents are chatted with through the runner feed');
@@ -81,7 +81,7 @@ export const agentChatRoutes = new Elysia({ name: 'agent-chat', detail: { tags: 
     },
     {
       body: sendChatBody,
-      params: agentParams,
+      params: projectAgentParams,
       permission: ['ai_agents', 'read'],
       response: { 200: SendChatResponse, ...commonErrors },
       detail: {

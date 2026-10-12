@@ -60,7 +60,17 @@ export function pgErrorCode(err: unknown): string | undefined {
 // other error is rethrown unchanged.
 export function rethrowDuplicate(err: unknown, what: string): never {
   if (pgErrorCode(err) === '23505') {
-    throw new HttpError(409, `A ${what} with this name already exists.`);
+    const article = /^[aeiou]/i.test(what) ? 'An' : 'A';
+    throw new HttpError(409, `${article} ${what} with this name already exists.`);
   }
   throw err;
+}
+
+// Reads a positive integer from an environment variable, falling back to the default
+// when unset, empty, or not a positive finite number.
+export function intEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }

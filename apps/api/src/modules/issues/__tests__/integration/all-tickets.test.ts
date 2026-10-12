@@ -75,20 +75,39 @@ describe('all tickets (GET /issues)', () => {
     expect(hit.columnName.length).toBeGreaterThan(0);
   });
 
-  it('excludes projects the user is not a member of', async () => {
+  it('excludes projects in teams the user cannot see', async () => {
+    // The first sign-up owns the instance workspace and sees every team; the two
+    // users below are ordinary members of their own teams.
+    await signUpTestUser();
+    const alice = await signUpTestUser();
+    const asAlice = authedApi(alice.cookie);
+    await createProjectWithIssues(asAlice, 'MKT', [{ title: 'Mine' }]);
+    const bob = await signUpTestUser();
+    const asBob = authedApi(bob.cookie);
+    await createProjectWithIssues(asBob, 'SEC', [{ title: 'Secret plan' }]);
+
+    const res = await asAlice.issues.get();
+    expect(res.data!.issues.map((i) => i.title)).toEqual(['Mine']);
+
+    // Bob sees his own project, not Alice's.
+    const other = await asBob.issues.get();
+    expect(other.data!.issues.map((i) => i.title)).toEqual(['Secret plan']);
+  });
+
+  it('covers exactly the projects the project list shows', async () => {
+    // The workspace owner sees every team's projects in the picker, so All
+    // tickets shows their issues too, and each row names its project by ref.
     const owner = await signUpTestUser();
     const asOwner = authedApi(owner.cookie);
     await createProjectWithIssues(asOwner, 'MKT', [{ title: 'Mine' }]);
-    const stranger = await signUpTestUser();
-    const asStranger = authedApi(stranger.cookie);
-    await createProjectWithIssues(asStranger, 'SEC', [{ title: 'Secret plan' }]);
+    const member = await signUpTestUser();
+    await createProjectWithIssues(authedApi(member.cookie), 'SEC', [{ title: 'Theirs' }]);
 
+    const projects = (await asOwner.projects.get()).data!;
     const res = await asOwner.issues.get();
-    expect(res.data!.issues.map((i) => i.title)).toEqual(['Mine']);
-
-    // The stranger sees their own project, not the owner's.
-    const other = await asStranger.issues.get();
-    expect(other.data!.issues.map((i) => i.title)).toEqual(['Secret plan']);
+    expect(new Set(res.data!.issues.map((i) => i.projectRef))).toEqual(
+      new Set(projects.map((p) => p.ref)),
+    );
   });
 
   it('groups by the column state group, not the per-project column', async () => {

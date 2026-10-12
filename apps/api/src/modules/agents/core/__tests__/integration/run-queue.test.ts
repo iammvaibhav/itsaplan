@@ -4,7 +4,9 @@ import { eq } from 'drizzle-orm';
 import { authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
+import { createAgent, teamOf } from '#tests/helpers/agents';
 import {
+  countRunsAhead,
   enqueueAgentRun,
   claimDueRuns,
   markRunSuccess,
@@ -26,17 +28,17 @@ async function setup() {
   return { asOwner, columnId };
 }
 
-const agents = (api: Api) => api.projects({ projectKey: 'MKT' })['ai-agents'];
-
 // Creates an internal agent and an issue, then enqueues a pending run for the pair.
 async function enqueueRun(asOwner: Api, columnId: number) {
-  const agent = (await agents(asOwner).post({ name: 'Bot', username: 'bot', kind: 'internal' }))
-    .data!.agent;
+  const agent = (
+    await createAgent(asOwner, 'MKT', { name: 'Bot', username: 'bot', kind: 'internal' })
+  ).data!.agent;
   const issue = (
     await asOwner.projects({ projectKey: 'MKT' }).issues.post({ columnId, title: 'Task' })
   ).data!;
   await enqueueAgentRun({
     agentId: agent.id,
+    projectId: agent.projects[0].id,
     issueId: issue.id,
     sourceActivityId: null,
     prompt: 'do it',
@@ -77,12 +79,77 @@ describe('agent_run queue store', () => {
     expect(second.find((r) => r.id === runId)).toBeUndefined();
   });
 
+  it('runs the runs of one agent on one issue one at a time, oldest first', async () => {
+    const { asOwner, columnId } = await setup();
+    const { agent, issue, runId } = await enqueueRun(asOwner, columnId);
+    const run = {
+      agentId: agent.id,
+      projectId: agent.projects[0].id,
+      sourceActivityId: null,
+      prompt: 'and this',
+    };
+    await enqueueAgentRun({ ...run, issueId: issue.id });
+    const other = (
+      await asOwner.projects({ projectKey: 'MKT' }).issues.post({ columnId, title: 'Other' })
+    ).data!;
+    await enqueueAgentRun({ ...run, issueId: other.id });
+    const [second, onOther] = await db
+      .select()
+      .from(agentRun)
+      .where(eq(agentRun.agentId, agent.id))
+      .orderBy(agentRun.id)
+      .then((rows) => rows.slice(1));
+
+    // The older run of the issue and the run of the other issue go together.
+    expect((await claimDueRuns()).map((r) => r.id).sort()).toEqual([runId, onOther.id].sort());
+    // The newer run of the issue waits while the older one is in flight.
+    expect(await claimDueRuns()).toEqual([]);
+
+    await markRunSuccess(runId, 'done', null);
+    expect((await claimDueRuns()).map((r) => r.id)).toEqual([second.id]);
+  });
+
+  it('counts the in-flight runs a run waits behind', async () => {
+    const { asOwner, columnId } = await setup();
+    const { agent, issue, runId } = await enqueueRun(asOwner, columnId);
+    await enqueueAgentRun({
+      agentId: agent.id,
+      projectId: agent.projects[0].id,
+      issueId: issue.id,
+      sourceActivityId: null,
+      prompt: 'again',
+    });
+    const teamId = await teamOf(asOwner, 'MKT');
+    const [, second] = await db
+      .select()
+      .from(agentRun)
+      .where(eq(agentRun.issueId, issue.id))
+      .orderBy(agentRun.id);
+
+    // Queued but unclaimed runs are not under way.
+    expect(await countRunsAhead(teamId, second.id)).toBe(0);
+
+    await claimDueRuns();
+    expect(await countRunsAhead(teamId, runId)).toBe(0);
+    expect(await countRunsAhead(teamId, second.id)).toBe(1);
+
+    // A finished run stops counting, so the next one is no longer held behind it.
+    await markRunSuccess(runId, 'done', null);
+    expect(await countRunsAhead(teamId, second.id)).toBe(0);
+  });
+
   it('marks a claimed run successful and removes it from the queue', async () => {
     const { asOwner, columnId } = await setup();
     const { runId } = await enqueueRun(asOwner, columnId);
     await claimDueRuns();
-    await markRunSuccess(runId);
-    expect(await readRun(runId)).toMatchObject({ status: 'success', lastError: null });
+    await markRunSuccess(runId, 'done', { inputTokens: 12, outputTokens: 3 });
+    expect(await readRun(runId)).toMatchObject({
+      status: 'success',
+      output: 'done',
+      lastError: null,
+      inputTokens: 12,
+      outputTokens: 3,
+    });
   });
 
   it('marks a run failed and records the error', async () => {

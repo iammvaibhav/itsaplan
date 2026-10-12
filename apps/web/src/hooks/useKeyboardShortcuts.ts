@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import type { Project } from '@/lib/api';
 import type { WorkItemsView } from '@/utils/viewTypes';
 import { isTypingTarget, type HotkeyId } from '@/utils/hotkeys';
 import { useHotkeyMatch } from '@/context/useHotkeys';
@@ -14,20 +13,19 @@ const VIEW_HOTKEYS: [HotkeyId, WorkItemsView][] = [
 
 // The global keyboard layer. Which combination runs what is declared in
 // lib/hotkeys; this hook only decides when a binding may fire. A 'global' binding
-// (the palette, the project switch) fires even with an overlay open, while an
-// 'app' one is suppressed while the user types or an overlay is open, because its
-// combination is a plain key that would land in the text being typed.
+// (the palette) fires even with an overlay open, while an 'app' one is suppressed
+// while the user types or an overlay is open, because its combination is a plain
+// key that would land in the text being typed.
 export function useKeyboardShortcuts(opts: {
   hasProject: boolean;
   // Whether this project has a chat panel to show at all.
   hasChat: boolean;
-  projects: Project[];
   // True while any modal/overlay is open, which suppresses the app bindings.
   overlayOpen: boolean;
   onToggleCommand: () => void;
-  onSelectProject: (key: string) => void;
   onChangeView: (view: WorkItemsView) => void;
   onNewIssue: () => void;
+  onNewInitiative: () => void;
   onNewProject: () => void;
   onSettings: () => void;
   onToggleChat: () => void;
@@ -35,17 +33,16 @@ export function useKeyboardShortcuts(opts: {
   const {
     hasProject,
     hasChat,
-    projects,
     overlayOpen,
     onToggleCommand,
-    onSelectProject,
     onChangeView,
     onNewIssue,
+    onNewInitiative,
     onNewProject,
     onSettings,
     onToggleChat,
   } = opts;
-  const { matches, digit } = useHotkeyMatch();
+  const matches = useHotkeyMatch();
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -54,18 +51,6 @@ export function useKeyboardShortcuts(opts: {
         onToggleCommand();
         return;
       }
-      // The project switch is positional: the digit picks the project at that
-      // place in the list.
-      const position = digit(e, 'project.switch');
-      if (position != null) {
-        const target = projects[position - 1];
-        if (target) {
-          e.preventDefault();
-          onSelectProject(target.key);
-        }
-        return;
-      }
-
       if (isTypingTarget(e.target) || overlayOpen) return;
 
       if (hasProject) {
@@ -80,6 +65,11 @@ export function useKeyboardShortcuts(opts: {
       if (matches(e, 'issue.new')) {
         e.preventDefault();
         onNewIssue();
+        return;
+      }
+      if (hasProject && matches(e, 'initiative.new')) {
+        e.preventDefault();
+        onNewInitiative();
         return;
       }
       if (matches(e, 'project.new')) {
@@ -102,14 +92,12 @@ export function useKeyboardShortcuts(opts: {
   }, [
     hasProject,
     hasChat,
-    projects,
     overlayOpen,
     matches,
-    digit,
     onToggleCommand,
-    onSelectProject,
     onChangeView,
     onNewIssue,
+    onNewInitiative,
     onNewProject,
     onSettings,
     onToggleChat,

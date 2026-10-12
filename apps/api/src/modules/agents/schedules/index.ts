@@ -3,13 +3,16 @@ import { authContext } from '#shared/auth-context';
 import { guards } from '#shared/guards';
 import { requireUser } from '#shared/access';
 import { noContent } from '#shared/http';
-import { HttpError } from '#shared/lib';
-import { accessErrors, commonErrors } from '#shared/responses';
+import { HttpError, rethrowDuplicate } from '#shared/lib';
+import { accessErrors, commonErrors, errors } from '#shared/responses';
 import { mcpTool } from '#mcp/generate';
+import { paginate } from '#shared/pagination';
 import { nextCronRun } from './cron';
+import { checkScheduleOptions, isScheduleType } from './extension';
 import {
   AgentScheduleResponse,
-  AgentScheduleListResponse,
+  AgentSchedulePageResponse,
+  agentSchedulePageQuery,
   CanceledRunsResponse,
   QueuedRunResponse,
   ScheduleRunListResponse,
@@ -26,14 +29,11 @@ import {
   getAgentSchedule,
   listAgentSchedules,
   listScheduleRuns,
+  newScheduleTrigger,
+  requiredText,
+  scheduleTriggerFields,
   updateAgentSchedule,
 } from './service';
-
-function requiredText(value: string, field: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) throw new HttpError(400, `${field} is required`);
-  return trimmed;
-}
 
 export const agentScheduleRoutes = new Elysia({
   name: 'agent-schedules',
@@ -43,13 +43,17 @@ export const agentScheduleRoutes = new Elysia({
   .use(guards)
   .get(
     '/projects/:projectKey/agent-schedules',
-    ({ project, user }) => listAgentSchedules(project.id, requireUser(user).id),
+    ({ project, user, query }) =>
+      paginate(query, (window) => listAgentSchedules(project.id, requireUser(user).id, window)),
     {
       permission: ['ai_agents', 'read'],
-      response: { 200: AgentScheduleListResponse, ...accessErrors },
+      query: agentSchedulePageQuery,
+      response: { 200: AgentSchedulePageResponse, ...accessErrors },
       detail: {
         summary: 'List agent schedules',
-        description: "List the project's agent schedules with their cron, next run, and last run.",
+        description:
+          "One page of the project's agent schedules with their cron or column, next run, " +
+          'and last run, newest first.',
         ...mcpTool('list_agent_schedules'),
       },
     },
@@ -57,17 +61,29 @@ export const agentScheduleRoutes = new Elysia({
   .post(
     '/projects/:projectKey/agent-schedules',
     async ({ project, body, set, user }) => {
-      const cron = body.cron.trim();
-      const row = await createAgentSchedule({
+      const type = body.type ?? 'cron';
+      if (!isScheduleType(type)) throw new HttpError(400, 'Unknown schedule type');
+      const trigger = await newScheduleTrigger(project, type, body);
+      const options = await checkScheduleOptions({
+        type,
+        options: body.options ?? {},
         projectId: project.id,
-        agentId: body.agentId,
-        actorUserId: requireUser(user).id,
-        name: requiredText(body.name, 'Name'),
-        prompt: requiredText(body.prompt, 'Task'),
-        cron,
-        status: body.status ?? 'active',
-        nextRunAt: nextCronRun(cron),
       });
+      let row;
+      try {
+        row = await createAgentSchedule({
+          projectId: project.id,
+          agentId: body.agentId,
+          actorUserId: requireUser(user).id,
+          name: requiredText(body.name, 'Name'),
+          type,
+          status: body.status ?? 'active',
+          options,
+          ...trigger,
+        });
+      } catch (err) {
+        rethrowDuplicate(err, 'schedule');
+      }
       if (!row) throw new HttpError(400, 'Select an agent from this project');
       set.status = 201;
       return row;
@@ -75,10 +91,13 @@ export const agentScheduleRoutes = new Elysia({
     {
       body: createScheduleBody,
       permission: ['ai_agents', 'create'],
-      response: { 201: AgentScheduleResponse, ...commonErrors },
+      response: { 201: AgentScheduleResponse, ...commonErrors, ...errors(409) },
       detail: {
         summary: 'Create an agent schedule',
-        description: 'Create a schedule that sends a task to an agent on a cron.',
+        description:
+          'Create a schedule that sends a task to an agent on a cron, on an issue each ' +
+          'time one enters a column, or on a type this instance adds. It starts active ' +
+          'unless status is given.',
         ...mcpTool('create_agent_schedule'),
       },
     },
@@ -86,27 +105,45 @@ export const agentScheduleRoutes = new Elysia({
   .patch(
     '/projects/:projectKey/agent-schedules/:scheduleId',
     async ({ project, params, body, user }) => {
-      const cron = body.cron?.trim();
       const current = await getAgentSchedule(project.id, params.scheduleId, requireUser(user).id);
       if (!current) throw new HttpError(404, 'Schedule not found');
-      // Recompute the next run when the cron changes, or when resuming a paused schedule.
+      if (!current.supported) {
+        throw new HttpError(
+          409,
+          'This schedule was set up with Cloud or Pro and does not run here; it can only be deleted',
+        );
+      }
+      const trigger = await scheduleTriggerFields(project, current.type, body);
+      // A resumed cron schedule runs next from now, not from when it was paused.
       const resuming = body.status === 'active' && current.status === 'paused';
-      let nextRunAt: Date | undefined;
-      if (cron !== undefined) nextRunAt = nextCronRun(cron);
-      else if (resuming) nextRunAt = nextCronRun(current.cron);
-      const row = await updateAgentSchedule(
-        project.id,
-        params.scheduleId,
-        {
-          ...(body.agentId !== undefined ? { agentId: body.agentId } : {}),
-          ...(body.name !== undefined ? { name: requiredText(body.name, 'Name') } : {}),
-          ...(body.prompt !== undefined ? { prompt: requiredText(body.prompt, 'Task') } : {}),
-          ...(cron !== undefined ? { cron } : {}),
-          ...(nextRunAt !== undefined ? { nextRunAt } : {}),
-          ...(body.status !== undefined ? { status: body.status } : {}),
-        },
-        requireUser(user).id,
-      );
+      if (resuming && trigger.nextRunAt === undefined && current.cron !== null) {
+        trigger.nextRunAt = nextCronRun(current.cron);
+      }
+      const options =
+        body.options === undefined
+          ? undefined
+          : await checkScheduleOptions({
+              type: current.type,
+              options: body.options,
+              projectId: project.id,
+            });
+      let row;
+      try {
+        row = await updateAgentSchedule(
+          project.id,
+          params.scheduleId,
+          {
+            ...(body.agentId !== undefined ? { agentId: body.agentId } : {}),
+            ...(body.name !== undefined ? { name: requiredText(body.name, 'Name') } : {}),
+            ...trigger,
+            ...(options !== undefined ? { options } : {}),
+            ...(body.status !== undefined ? { status: body.status } : {}),
+          },
+          requireUser(user).id,
+        );
+      } catch (err) {
+        rethrowDuplicate(err, 'schedule');
+      }
       if (!row) throw new HttpError(404, 'Schedule not found');
       return row;
     },
@@ -114,10 +151,12 @@ export const agentScheduleRoutes = new Elysia({
       params: scheduleParams,
       body: updateScheduleBody,
       permission: ['ai_agents', 'edit'],
-      response: { 200: AgentScheduleResponse, ...commonErrors },
+      response: { 200: AgentScheduleResponse, ...commonErrors, ...errors(409) },
       detail: {
         summary: 'Update an agent schedule',
-        description: "Update a schedule's agent, task, cron, or status.",
+        description:
+          "Update a schedule's agent, task, cron or column, options, or status. Its type stays " +
+          'the one it was created with. A schedule that is not supported here answers 409.',
         ...mcpTool('update_agent_schedule'),
       },
     },
@@ -161,7 +200,8 @@ export const agentScheduleRoutes = new Elysia({
         summary: 'Run an agent schedule now',
         description:
           'Queue a run of the schedule now and return its run id. It runs in the background; ' +
-          'read the result with list_agent_schedule_runs.',
+          "read the result with list_agent_schedule_runs. Only a 'cron' schedule runs on " +
+          'demand: the runs of the others work on the issue that started them.',
         ...mcpTool('run_agent_schedule'),
       },
     },

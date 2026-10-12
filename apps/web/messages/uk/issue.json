@@ -5,6 +5,9 @@
   "openAsPage": "Відкрити як сторінку",
   "titlePlaceholder": "Назва задачі",
   "noActivity": "Активності ще немає.",
+  "noComments": "Коментарів ще немає.",
+  "noHistory": "Змін ще немає.",
+  "noWorklog": "Час ще не списано.",
   "noActivityInStretch": "Немає активності за цей період.",
   "activityLoadFailed": "Не вдалося завантажити активність.",
   "fields": {
@@ -47,6 +50,12 @@
     "dueDate": "Дедлайн",
     "clearDueDate": "Прибрати дедлайн",
     "labels": "Мітки",
+    "copyId": "Скопіювати ID",
+    "copyShortLink": "Скопіювати коротке посилання",
+    "copyFullUrl": "Скопіювати повне посилання",
+    "copyTitle": "Скопіювати назву",
+    "copyDescription": "Скопіювати опис",
+    "copyBranch": "Скопіювати назву гілки",
     "copyPrompt": "Скопіювати промпт",
     "restore": "Відновити",
     "archive": "Архівувати",
@@ -54,6 +63,7 @@
     "noDelegate": "Без делегата",
     "noInitiative": "Без ініціативи",
     "noCycle": "Без циклу",
+    "copyFailed": "Не вдалося скопіювати",
     "promptCopied": "Промпт скопійовано"
   },
   "commands": {
@@ -88,7 +98,9 @@
   },
   "actionsBar": {
     "shortLinkCopied": "Коротке посилання скопійовано",
+    "branchCopied": "Назву гілки скопійовано",
     "copyShortLink": "Скопіювати коротке посилання",
+    "copyBranch": "Скопіювати назву гілки",
     "copied": "Скопійовано!",
     "copyPrompt": "Скопіювати промпт",
     "sharedPublicly": "У спільному доступі",
@@ -96,7 +108,8 @@
     "restore": "Відновити задачу",
     "archive": "Архівувати задачу",
     "delete": "Видалити задачу",
-    "shareIssue": "Поділитися задачею"
+    "shareIssue": "Поділитися задачею",
+    "move": "Перенести в інший проєкт"
   },
   "actions": {
     "deleteTitle": "Видалити задачу",
@@ -105,7 +118,16 @@
     "cannotBeUndone": "Цю дію не можна скасувати.",
     "deleteDescription": "Видалити {issue}? Разом з нею буде видалено коментарі, активність і вкладення.",
     "archiveDescription": "Архівувати {issue}? Вона зникне з дошки, її можна буде відновити пізніше.",
-    "applyDescription": "Застосувати <v>{action}</v> до цієї задачі?"
+    "applyDescription": "Застосувати <v>{action}</v> до цієї задачі?",
+    "moveTitle": "Перенести задачу",
+    "move": "Перенести",
+    "moveDescription": "Перенести {issue} в інший проєкт цієї команди. Там задача отримає новий номер, а старе посилання й далі її відкриватиме.",
+    "moveSubtasks": "{count, plural, one {# підзадача переноситься разом із нею.} few {# підзадачі переносяться разом із нею.} many {# підзадач переносяться разом із нею.} other {# підзадачі переносяться разом із нею.}}",
+    "moveProject": "Проєкт",
+    "moveChooseProject": "Виберіть проєкт",
+    "moveColumn": "Статус",
+    "moveColumnMatching": "Відповідний статус",
+    "moveCarriedOver": "Тип, мітки та користувацькі поля зберігаються, якщо в цільовому проєкті є такі самі за назвою. Цикл, ініціатива та зв’язки із задачами цього проєкту видаляються."
   },
   "create": {
     "title": "Нова задача",
@@ -114,7 +136,10 @@
     "noFields": "Полів немає.",
     "description": "Опис",
     "other": "Інше",
-    "submit": "Створити задачу"
+    "submit": "Створити задачу",
+    "template": "Шаблон",
+    "applyTemplate": "Застосувати шаблон…",
+    "noTemplates": "Шаблонів немає."
   },
   "attachments": {
     "title": "Вкладення",
@@ -135,6 +160,8 @@
     "download": "Завантажити",
     "downloadFile": "Завантажити {name}",
     "deleteFile": "Видалити {name}",
+    "deleteTitle": "Видалити вкладення",
+    "deleteConfirmation": "Видалити {name}? Файл також буде прибрано з опису всюди, де він вбудований. Дію неможливо скасувати.",
     "preview": "Переглянути {name}",
     "remove": "Прибрати {name}",
     "removeShort": "Прибрати",
@@ -191,7 +218,11 @@
     "detachFromParent": "Відв'язати від {parent}",
     "subtaskOf": "Підзадача {issue}",
     "existingIssue": "Наявна задача",
-    "searchPrompt": "Пошук задач, щоб додати підзадачею…"
+    "searchPrompt": "Пошук задач, щоб додати підзадачею…",
+    "filter": "Фільтр за статусом",
+    "hiding": "Приховано: {states}",
+    "clearFilter": "Скинути фільтр",
+    "allHidden": "Усі підзадачі приховані фільтром."
   },
   "subtaskDisposal": {
     "intro": "{issues, plural, one {Ця задача має} other {Ці задачі мають}} {count, plural, one {# підзадачу} few {# підзадачі} many {# підзадач} other {# підзадачі}}.",
@@ -215,7 +246,12 @@
     "cancel": "Скасувати",
     "toSend": "щоб надіслати",
     "unknownAuthor": "Невідомий",
-    "goToLastComment": "Перейти до останнього коментаря"
+    "goToLastComment": "Перейти до останнього коментаря",
+    "edit": "Редагувати",
+    "edited": "змінено",
+    "deleteComment": "Видалити коментар",
+    "deleteCommentTitle": "Видалити цей коментар?",
+    "deleteCommentConfirmation": "Коментар і відповіді на нього буде видалено безповоротно."
   },
   "stats": {
     "title": "Статистика",
@@ -234,11 +270,7 @@
     "endTime": "Завершення"
   },
   "editor": {
-    "insertImage": "Вставити зображення",
-    "insertNamed": "Вставити {name}",
-    "descriptionPlaceholder": "Додайте опис…",
-    "noImages": "Зображень ще немає. Завантажте з панелі вкладень або перетягніть просто в редактор.",
-    "image": "Зображення"
+    "descriptionPlaceholder": "Додайте опис…"
   },
   "cycleSelect": {
     "label": "Цикл",
@@ -317,17 +349,96 @@
     "pullRequestOpened": "відкрив(-ла) пул-реквест <v>{pr}</v>",
     "worklogAdded": "записав(-ла) <v>{time}</v> за <v>{date}</v>",
     "worklogChanged": "змінив(-ла) запис <v>{from}</v> за <v>{fromDate}</v> на <v>{to}</v> за <v>{date}</v>",
-    "worklogRemoved": "видалив(-ла) запис <v>{time}</v> за <v>{date}</v>"
+    "worklogRemoved": "видалив(-ла) запис <v>{time}</v> за <v>{date}</v>",
+    "commentEdited": "змінив коментар",
+    "commentDeleted": "видалив коментар",
+    "issueMoved": "переніс задачу з <v>{from}</v> до <v>{to}</v>"
+  },
+  "development": {
+    "title": "Розробка",
+    "unlink": "Видалити зв’язок із розробкою",
+    "branch": "Гілка",
+    "add": "Додати",
+    "empty": "Прив’язати наявний PR/MR або створити новий із гілки",
+    "linkExisting": "Прив’язати наявний",
+    "linkExistingDescription": "Виберіть pull request або merge request із підключеного репозиторію.",
+    "createPullRequest": "Створити PR/MR",
+    "createPullRequestDescription": "Створіть PR/MR з наявної гілки та прив’яжіть його до задачі.",
+    "noConnectedRepositories": "Спочатку підключіть репозиторій GitHub або GitLab у налаштуваннях проєкту.",
+    "loadingRepositories": "Завантаження репозиторіїв…",
+    "chooseRepository": "Виберіть репозиторій",
+    "openOnly": "Відкриті",
+    "allPullRequests": "Усі",
+    "searchPullRequests": "Пошук за назвою, гілкою або номером…",
+    "loadingPullRequests": "Завантаження PR/MR…",
+    "noPullRequests": "PR/MR не знайдено.",
+    "alreadyLinked": "Прив’язано",
+    "loadMore": "Показати ще",
+    "cancel": "Скасувати",
+    "linking": "Прив’язуємо…",
+    "linkPullRequest": "Прив’язати PR/MR",
+    "linkedSuccess": "PR/MR прив’язано",
+    "linkFailed": "Не вдалося прив’язати PR/MR",
+    "repository": "Репозиторій",
+    "sourceBranch": "Вихідна гілка",
+    "targetBranch": "Цільова гілка",
+    "chooseBranch": "Виберіть гілку",
+    "loadingBranches": "Завантаження гілок…",
+    "loadMoreBranches": "Показати ще гілки",
+    "pullRequestTitle": "Назва",
+    "description": "Опис",
+    "descriptionPlaceholder": "Додайте контекст для рев’ю…",
+    "mergeBehavior": "Зв’язок із задачею",
+    "closeOnMerge": "Закрити після merge",
+    "referenceOnly": "Лише згадати",
+    "createAsDraft": "Створити як draft",
+    "branchesMustDiffer": "Вихідна та цільова гілки мають відрізнятися.",
+    "creating": "Створюємо…",
+    "createdSuccess": "PR/MR створено та прив’язано",
+    "createFailed": "Не вдалося створити PR/MR",
+    "draft": "Чернетка",
+    "ready": "Готово до злиття",
+    "open": "Відкрито",
+    "merged": "Змерджено",
+    "closed": "Закрито",
+    "updated": "Оновлено {date}",
+    "openPipeline": "Відкрити pipeline",
+    "checks": "{count, plural, one {# перевірка} few {# перевірки} many {# перевірок} other {# перевірки}}",
+    "pipeline": {
+      "pending": "Очікує",
+      "running": "Виконується",
+      "success": "Пройдено",
+      "failed": "Помилка",
+      "canceled": "Скасовано",
+      "skipped": "Пропущено"
+    }
+  },
+  "documents": {
+    "title": "Документи",
+    "add": "Пов’язати документ",
+    "empty": "Пов’язаних документів ще немає.",
+    "loadFailed": "Не вдалося завантажити пов’язані сторінки. Натисніть, щоб повторити.",
+    "remove": "Відв’язати {title}",
+    "untitled": "Без назви"
   },
   "archived": "Архівовано",
   "activityHeading": "Активність",
-  "feedFlat": "Списком",
-  "feedGrouped": "За статусами",
+  "feedTabAll": "Усі",
+  "feedTabComments": "Коментарі",
+  "feedTabHistory": "Історія",
+  "feedTabWorklog": "Облік часу",
+  "feedStatus": "Статуси",
+  "feedGroupByStatus": "Групувати за статусами",
+  "feedNewest": "Спочатку нові",
+  "feedOldest": "Спочатку старі",
+  "feedChangeOrder": "Змінити порядок",
+  "feedRunToggle": "Показати схожі зміни",
   "shareUnavailable": "Ця спільна задача недоступна. Можливо, посилання відкликали.",
   "fieldSelects": {
     "changeState": "Змінити статус…",
     "changeType": "Змінити тип…",
     "noType": "Без типу",
+    "unsetState": "Без статусу",
     "noAssignee": "Без виконавця",
     "assignTo": "Призначити…",
     "you": "Ви",
@@ -350,7 +461,14 @@
   },
   "watchers": {
     "watch": "Стежити",
-    "unwatch": "Не стежити"
+    "unwatch": "Не стежити",
+    "manage": "Керувати спостерігачами",
+    "search": "Знайти учасника проєкту…",
+    "empty": "Учасників не знайдено.",
+    "you": "{name} (ви)",
+    "add": "Додати {name} до спостерігачів",
+    "remove": "Прибрати {name} зі спостерігачів",
+    "watchingCount": "{count, plural, =0 {Ніхто не стежить} one {# спостерігач} few {# спостерігачі} many {# спостерігачів} other {# спостерігача}}"
   },
   "effects": {
     "cleared": "Очищено",

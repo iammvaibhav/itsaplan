@@ -1,12 +1,11 @@
-import { db, agentRun, issue, project } from '@repo/db';
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
-import { iso } from '#shared/lib';
+import { db, agentRun, issue, project, team } from '@repo/db';
+import { and, desc, eq, gt, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import { intEnv, iso } from '#shared/lib';
 import type { AgentRunTrigger } from '../model';
-import { intEnv } from './helpers/env';
+import { equalJitterBackoffMs } from './helpers/backoff';
 
-// The agent_run outbox: data access for issue-triggered runs and run history. The
-// background worker claims pending rows, calls the internal runtime route, and
-// records the outcome.
+// The agent_run outbox: data access for triggered runs and run history. The api's
+// run poller claims pending rows, runs them, and records the outcome.
 
 // Tuning, env-overridable with defaults. An agent run is an LLM call that can take
 // tens of seconds, so the lease is generous — it must exceed a run's wall time so a
@@ -18,8 +17,56 @@ export const agentRunConfig = {
   leaseSeconds: () => intEnv('AGENT_RUN_LEASE_SECONDS', 300),
 };
 
+const RETRY_BASE_MS = 30_000;
+const RETRY_CAP_MS = 30 * 60_000;
+
+// How long a run waits before its next attempt after the given one failed.
+export function runRetryDelayMs(attempts: number): number {
+  return equalJitterBackoffMs(attempts, RETRY_BASE_MS, RETRY_CAP_MS);
+}
+
+// The condition a candidate run `q` of a claim meets when it is its turn. The runs of
+// one agent on one issue share the agent's conversation thread and act on the same
+// issue, so they go one at a time, oldest first: a run waits while another of them
+// holds a slot (claimed and inside its lease, or waiting out a retry), and while an
+// older one is due, which the same claim takes instead.
+export const issueRunTurn = sql`NOT EXISTS (
+  SELECT 1 FROM agent_run o
+  WHERE o.agent_id = q.agent_id AND o.issue_id = q.issue_id AND o.id <> q.id
+    AND o.status = 'pending'
+    AND ((o.started_at IS NOT NULL AND o.next_attempt_at > now())
+      OR (o.next_attempt_at <= now() AND o.id < q.id))
+)`;
+
+// Runs of this workspace's agents that hold a slot and were queued before this one. A claim
+// stamps started_at and pushes next_attempt_at forward, so a pending run that is
+// stamped and still inside that window is one of them — as is a run waiting out its
+// retry backoff, which holds a slot it is not using. Counting only the older runs is
+// what keeps a ceiling from turning away every run of a burst at once: each yields to
+// the ones ahead of it and the rest come back on their next attempt.
+export async function countRunsAhead(workspaceId: number, runId: number): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(agentRun)
+    .innerJoin(project, eq(project.id, agentRun.projectId))
+    .innerJoin(team, eq(team.id, project.teamId))
+    .where(
+      and(
+        eq(team.workspaceId, workspaceId),
+        eq(agentRun.status, 'pending'),
+        isNotNull(agentRun.startedAt),
+        gt(agentRun.nextAttemptAt, sql`now()`),
+        lt(agentRun.id, runId),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
 export async function enqueueAgentRun(input: {
   agentId: number;
+  // The project the run works in, which is the issue's. An agent works in several
+  // projects, so the run carries its own rather than reading the agent's.
+  projectId: number;
   issueId: number;
   sourceActivityId: number | null;
   prompt: string;
@@ -31,6 +78,7 @@ export async function enqueueAgentRun(input: {
   const delay = Math.max(0, Math.trunc(input.delaySeconds ?? 0));
   await db.insert(agentRun).values({
     agentId: input.agentId,
+    projectId: input.projectId,
     issueId: input.issueId,
     sourceActivityId: input.sourceActivityId,
     prompt: input.prompt,
@@ -42,14 +90,17 @@ export async function enqueueAgentRun(input: {
 export interface ClaimedRun {
   id: number;
   agentId: number;
-  issueId: number;
+  // Null for a cron schedule's run or a manual one, which works on no single issue.
+  issueId: number | null;
+  scheduleId: number | null;
+  trigger: AgentRunTrigger;
   prompt: string;
   attempts: number;
   // The source comment id when the run was triggered by a mention, null for a
   // delegation. The poller frames the task differently for each.
   sourceActivityId: number | null;
-  // The agent's project and bot user, read inline so the poller can run it without a
-  // second query.
+  // The run's project and the agent's bot user, read inline so the poller can run it
+  // without a second query.
   projectId: number;
   agentUserId: string;
   // The agent's own handle, so the prompt can tell whether the text addressed it.
@@ -75,8 +126,8 @@ export interface ClaimedRun {
 // LOCKED lets more than one API replica run without ever claiming the same row.
 // Claiming bumps attempts and pushes next_attempt_at forward by the lease while
 // keeping status 'pending', so a run whose poller crashes mid-flight becomes
-// claimable again after the lease — no separate recovery pass. The agent's
-// project_id and user_id are read inline. An external agent's runs are left alone:
+// claimable again after the lease — no separate recovery pass. The run's project and
+// the agent's user_id are read inline. An external agent's runs are left alone:
 // they are claimed over HTTP by the operator's runner (modules/agents/runner).
 export async function claimDueRuns(): Promise<ClaimedRun[]> {
   const batchSize = agentRunConfig.batchSize();
@@ -84,12 +135,14 @@ export async function claimDueRuns(): Promise<ClaimedRun[]> {
   const rows = await db.execute(sql`
     UPDATE agent_run r
     SET attempts = r.attempts + 1,
+        started_at = coalesce(r.started_at, now()),
         next_attempt_at = now() + make_interval(secs => ${leaseSeconds})
     WHERE r.id IN (
       SELECT id FROM agent_run q
       WHERE q.status = 'pending' AND q.next_attempt_at <= now()
         AND (SELECT kind FROM ai_agent a WHERE a.id = q.agent_id) = 'internal'
-      ORDER BY q.next_attempt_at
+        AND ${issueRunTurn}
+      ORDER BY q.next_attempt_at, q.id
       FOR UPDATE SKIP LOCKED
       LIMIT ${batchSize}
     )
@@ -97,10 +150,12 @@ export async function claimDueRuns(): Promise<ClaimedRun[]> {
       r.id,
       r.agent_id AS "agentId",
       r.issue_id AS "issueId",
+      r.schedule_id AS "scheduleId",
+      r.trigger,
       r.prompt,
       r.attempts,
       r.source_activity_id AS "sourceActivityId",
-      (SELECT project_id FROM ai_agent a WHERE a.id = r.agent_id) AS "projectId",
+      r.project_id AS "projectId",
       (SELECT user_id FROM ai_agent a WHERE a.id = r.agent_id) AS "agentUserId",
       (SELECT username FROM ai_agent a WHERE a.id = r.agent_id) AS "agentUsername",
       (SELECT p.key || '-' || i.sequence_number
@@ -157,10 +212,24 @@ export async function loadThreadContext(sourceActivityId: number | null): Promis
 
 // A run canceled while it was in flight keeps that outcome: each of these writes only
 // where the row is still 'pending'.
-export async function markRunSuccess(id: number): Promise<void> {
+
+// `usage` is what the last model call of the run read and wrote. Null where the model
+// reports none, which the run history shows as a dash.
+export async function markRunSuccess(
+  id: number,
+  output: string,
+  usage: { inputTokens: number; outputTokens: number } | null,
+): Promise<void> {
   await db
     .update(agentRun)
-    .set({ status: 'success', lastError: null })
+    .set({
+      status: 'success',
+      output,
+      lastError: null,
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+      finishedAt: new Date(),
+    })
     .where(and(eq(agentRun.id, id), eq(agentRun.status, 'pending')));
 }
 
@@ -179,7 +248,23 @@ export async function scheduleRunRetry(id: number, delayMs: number, error: strin
 export async function markRunFailed(id: number, error: string): Promise<void> {
   await db
     .update(agentRun)
-    .set({ status: 'failed', lastError: error.slice(0, 500) })
+    .set({ status: 'failed', lastError: error.slice(0, 500), finishedAt: new Date() })
+    .where(and(eq(agentRun.id, id), eq(agentRun.status, 'pending')));
+}
+
+// Puts a claimed run back in the queue without spending the attempt, for a run the
+// team has no free slot for or one held back by setRunAdmission. Waiting is not a failed
+// attempt, and nothing has been recorded on the issue yet, so the run leaves no trace of
+// having been picked up at all: a first claim's started_at goes too, so the waiting run
+// holds no slot in countRunsAhead and can be canceled as not started.
+export async function deferRun(id: number, delaySeconds: number): Promise<void> {
+  await db
+    .update(agentRun)
+    .set({
+      attempts: sql`${agentRun.attempts} - 1`,
+      startedAt: sql`CASE WHEN ${agentRun.attempts} = 1 THEN NULL ELSE ${agentRun.startedAt} END`,
+      nextAttemptAt: sql`now() + make_interval(secs => ${delaySeconds})`,
+    })
     .where(and(eq(agentRun.id, id), eq(agentRun.status, 'pending')));
 }
 
@@ -198,8 +283,19 @@ export interface AgentRunRow {
   // What the run produced: the runtime's reply, or whatever the runner's command
   // printed. Null until the run finishes.
   output: string | null;
+  contextTokens?: number;
   nextAttemptAt: string;
   createdAt: string;
+}
+
+// The size of a run's context as its DTO carries it. The field is left out where there
+// is nothing to report: a run stored before the counts were recorded, and one whose
+// agent reports none.
+export function contextTokensOf(row: { inputTokens: number | null; outputTokens: number | null }): {
+  contextTokens?: number;
+} {
+  if (row.inputTokens == null && row.outputTokens == null) return {};
+  return { contextTokens: (row.inputTokens ?? 0) + (row.outputTokens ?? 0) };
 }
 
 export interface AgentRunPage {
@@ -211,10 +307,15 @@ export interface AgentRunPage {
 // One page of an agent's runs, newest first. Keyset pagination by id (runs are
 // id-monotonic): pass the previous page's nextCursor as `before`. limit is clamped to
 // 1..50.
+//
+// An agent works in several projects of its team and a run carries the one it ran in,
+// so `projectIds` bounds the page to the projects the reader may see. Omitted, it
+// reads every project — only a caller who runs the team passes nothing.
 export async function listAgentRuns(
   agentId: number,
-  opts: { before?: number; limit?: number } = {},
+  opts: { before?: number; limit?: number; projectIds?: number[] } = {},
 ): Promise<AgentRunPage> {
+  if (opts.projectIds?.length === 0) return { items: [], nextCursor: null };
   const limit = Math.min(Math.max(opts.limit ?? 25, 1), 50);
   const rows = await db
     .select({
@@ -226,6 +327,8 @@ export async function listAgentRuns(
       attempts: agentRun.attempts,
       lastError: agentRun.lastError,
       output: agentRun.output,
+      inputTokens: agentRun.inputTokens,
+      outputTokens: agentRun.outputTokens,
       nextAttemptAt: agentRun.nextAttemptAt,
       createdAt: agentRun.createdAt,
       issueSeq: issue.sequenceNumber,
@@ -236,7 +339,11 @@ export async function listAgentRuns(
     .leftJoin(issue, eq(issue.id, agentRun.issueId))
     .leftJoin(project, eq(project.id, issue.projectId))
     .where(
-      and(eq(agentRun.agentId, agentId), opts.before ? lt(agentRun.id, opts.before) : undefined),
+      and(
+        eq(agentRun.agentId, agentId),
+        opts.projectIds ? inArray(agentRun.projectId, opts.projectIds) : undefined,
+        opts.before ? lt(agentRun.id, opts.before) : undefined,
+      ),
     )
     .orderBy(desc(agentRun.id))
     .limit(limit + 1);
@@ -254,6 +361,7 @@ export async function listAgentRuns(
       attempts: r.attempts,
       lastError: r.lastError,
       output: r.output,
+      ...contextTokensOf(r),
       nextAttemptAt: iso(r.nextAttemptAt),
       createdAt: iso(r.createdAt),
     })),

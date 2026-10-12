@@ -3,6 +3,7 @@ import { auth } from '@repo/auth';
 import { authedApi } from '../helpers/app';
 import { signUpTestUser } from '../helpers/auth';
 import { resetDb } from '../helpers/db';
+import { createAgent } from '../helpers/agents';
 
 const PASSWORD = 'test-password-123';
 
@@ -17,7 +18,7 @@ async function projectWithAgent(handle: string): Promise<void> {
   const owner = await signUpTestUser({ name: 'Owner' });
   const asOwner = authedApi(owner.cookie);
   await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
-  await asOwner.projects({ projectKey: 'MKT' })['ai-agents'].post({
+  await createAgent(asOwner, 'MKT', {
     name: 'Design Bot',
     username: handle,
     kind: 'external',

@@ -1,19 +1,22 @@
 import { randomInt } from 'node:crypto';
-import { db } from '@repo/db';
-import { eq, sql, type SQL } from 'drizzle-orm';
+import { createWorkspace, db, instanceWorkspaceId } from '@repo/db';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { betterAuth } from 'better-auth';
 import { createAuthMiddleware, APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { passkey } from '@better-auth/passkey';
 import { apiKey } from '@better-auth/api-key';
-import { openAPI, magicLink, username } from 'better-auth/plugins';
+import { mcp, openAPI, magicLink, username, genericOAuth } from 'better-auth/plugins';
+import type { GenericOAuthConfig } from 'better-auth/plugins/generic-oauth';
 import * as schema from '@repo/db/schema';
 import {
   getAuthSettings,
   hasPendingInvite,
   getGoogleConfig,
   isGoogleUsable,
-  hasConfiguredEmailProvider,
+  getOidcConfig,
+  isOidcUsable,
+  isAccountDeactivated,
 } from './instance';
 import { sendAuthEmail } from './mail';
 
@@ -22,7 +25,7 @@ import { sendAuthEmail } from './mail';
 // that misses it has to fail at startup instead of running on a localhost default.
 export const trustedOrigins = (process.env.APP_URL ?? '')
   .split(',')
-  .map((origin) => origin.trim())
+  .map((origin) => origin.trim().replace(/\/+$/, ''))
   .filter(Boolean);
 if (trustedOrigins.length === 0) {
   throw new Error('APP_URL is not set: public origin(s) of the web app.');
@@ -46,9 +49,23 @@ function parentDomain(origin: string | undefined): string | undefined {
   return '.' + labels.slice(1).join('.');
 }
 
-// Explicit COOKIE_DOMAIN wins (needed for multi-label TLDs or deep subdomains);
-// otherwise derive it from the frontend origin.
-const cookieDomain = process.env.COOKIE_DOMAIN || parentDomain(trustedOrigins[0]);
+function safeUrl(value: string | undefined): URL | undefined {
+  if (!value) return undefined;
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+}
+
+// parentDomain() would widen the cookie to sibling subdomains even when web and api
+// share a host, where a host-only cookie is enough.
+const sameHost = safeUrl(trustedOrigins[0])?.hostname === safeUrl(process.env.API_URL)?.hostname;
+
+// COOKIE_DOMAIN wins (multi-label TLDs, deep subdomains); otherwise host-only when web
+// and api share a host, else the parent domain of the frontend.
+const cookieDomain =
+  process.env.COOKIE_DOMAIN || (sameHost ? undefined : parentDomain(trustedOrigins[0]));
 
 // WebAuthn relying-party id: the frontend domain the passkey is bound to (no port,
 // no scheme). The WebAuthn ceremony runs in the frontend JS, so the expected origin
@@ -57,12 +74,86 @@ const cookieDomain = process.env.COOKIE_DOMAIN || parentDomain(trustedOrigins[0]
 // public frontend hostname.
 const passkeyRpID = process.env.PASSKEY_RP_ID ?? new URL(trustedOrigins[0]).hostname;
 
-// Backend origin where the better-auth handler is mounted (/api/auth/*). Mandatory:
-// every link in an authentication email and the Google redirect URI are built from it.
-const baseURL = process.env.API_URL;
-if (!baseURL) {
-  throw new Error('API_URL is not set: public origin of the backend.');
+// Public URL of the backend, with the path a subpath proxy adds; the links in auth
+// emails and the OAuth redirect URIs are built from it.
+const apiPublicUrl = (process.env.API_URL ?? '').replace(/\/+$/, '');
+if (!apiPublicUrl) {
+  throw new Error('API_URL is not set: public URL of the backend.');
 }
+const apiUrl = safeUrl(apiPublicUrl);
+if (!apiUrl) {
+  throw new Error(`API_URL is not a valid URL: ${apiPublicUrl}`);
+}
+
+// A baseURL with a path replaces better-auth's /api/auth basePath and the api's fixed
+// mount stops matching, so it only gets the origin.
+const baseURL = apiUrl.origin;
+const apiHasPath = apiUrl.pathname !== '/';
+
+// Over HTTPS with a host-only cookie the session cookies carry the __Host- prefix:
+// the browser then refuses a cookie of that name planted by a sibling subdomain (with
+// a Domain, or a narrower Path), which __Secure- does not prevent. better-auth only
+// writes __Secure-, so its automatic prefix is turned off and both prefixes are written
+// into the names here.
+const hostPrefixedCookies = baseURL.startsWith('https://') && !cookieDomain;
+const SESSION_COOKIES = ['session_token', 'session_data', 'account_data', 'dont_remember'];
+
+// better-auth builds the links it hands to the mailers from the origin-only baseURL;
+// this puts the path back.
+function withPublicOrigin(url: string): string {
+  return url.startsWith(baseURL) ? apiPublicUrl + url.slice(baseURL.length) : url;
+}
+
+// MCP clients follow the discovery documents verbatim, and better-auth builds their
+// URLs from the same origin-only baseURL: behind a path prefix they would land on
+// whatever serves the root of the host. `resource` comes from apiPublicUrl already.
+const DISCOVERY_URL_KEYS = new Set([
+  'issuer',
+  'authorization_servers',
+  'authorization_endpoint',
+  'token_endpoint',
+  'userinfo_endpoint',
+  'jwks_uri',
+  'registration_endpoint',
+]);
+
+export async function withPublicDiscoveryUrls(response: Response): Promise<Response> {
+  const metadata = (await response.json()) as Record<string, unknown> | null;
+  // better-auth answers null when it cannot build the document (no issuer).
+  if (metadata === null || typeof metadata !== 'object') {
+    return new Response(JSON.stringify(metadata), {
+      status: response.status,
+      headers: response.headers,
+    });
+  }
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!DISCOVERY_URL_KEYS.has(key)) continue;
+    if (typeof value === 'string') metadata[key] = withPublicOrigin(value);
+    else if (Array.isArray(value)) metadata[key] = value.map((v) => withPublicOrigin(String(v)));
+  }
+  return new Response(JSON.stringify(metadata), {
+    status: response.status,
+    headers: response.headers,
+  });
+}
+
+// withMcpAuth points the 401 challenge at better-auth's own copy of the metadata,
+// built from the origin-only baseURL; behind a path prefix it is replaced by the copy
+// served under the prefix. Without one, better-auth's challenge reaches the api as is.
+const MCP_CHALLENGE = `Bearer resource_metadata="${apiPublicUrl}/.well-known/oauth-protected-resource/mcp"`;
+
+export async function withPublicMcpChallenge(response: Response): Promise<Response> {
+  if (!apiHasPath || !response.headers.has('WWW-Authenticate')) return response;
+  const headers = new Headers(response.headers);
+  headers.set('WWW-Authenticate', MCP_CHALLENGE);
+  const body = (await response.json()) as { error?: Record<string, unknown> };
+  if (body.error) body.error['www-authenticate'] = MCP_CHALLENGE;
+  return new Response(JSON.stringify(body), { status: response.status, headers });
+}
+
+// The fallback for a callback that fails early is better-auth's own /api/auth/error;
+// under a path prefix that route is outside it, and /login turns ?error= into a message.
+const oauthErrorURL = apiHasPath ? `${trustedOrigins[0]}/login` : undefined;
 
 // User roles. "god" is the owner of the instance: the very first registered user
 // gets it automatically; everyone after is a plain "user". The role is assigned
@@ -70,16 +161,16 @@ if (!baseURL) {
 export const USER_ROLES = ['god', 'user'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
+// The exact authorized redirect URI to register in the Google Cloud console;
+// god mode shows it for copying.
+export const GOOGLE_REDIRECT_URI = `${apiPublicUrl}/api/auth/callback/google`;
+
 // Google OAuth credentials live in the database (god mode), not in env. The provider
 // is built once at startup, but it keeps this options object by reference and reads
 // clientId / clientSecret off it on every call, so refreshing the object per request
 // is what lets the owner change or revoke the credentials without a restart.
-const googleOptions = { clientId: '', clientSecret: '' };
-
-// The exact value that has to be registered as an authorized redirect URI in the
-// Google Cloud console. better-auth derives it from baseURL; god mode shows it so the
-// owner can copy it instead of assembling it by hand.
-export const GOOGLE_REDIRECT_URI = `${baseURL}/api/auth/callback/google`;
+// redirectURI is explicit: the one inferred from the origin-only baseURL lacks the path.
+const googleOptions = { clientId: '', clientSecret: '', redirectURI: GOOGLE_REDIRECT_URI };
 
 // Loads the stored credentials into that object and reports whether Google sign-in
 // can run. A read failure disables the provider rather than failing the request with
@@ -95,6 +186,85 @@ async function refreshGoogleOptions(): Promise<boolean> {
     return false;
   }
 }
+
+// The generic OIDC provider. One per instance, so its id is a constant: it is what
+// the `account` rows store, and better-auth materialises the provider list once at
+// startup — the config array can neither grow nor be re-keyed afterwards. As with
+// Google, the plugin keeps this object by reference and reads its fields on every
+// call, so refreshing it per request is what lets the owner change the credentials
+// without a restart. Assign the fields, never replace the object.
+export const OIDC_PROVIDER_ID = 'oidc';
+
+// The exact redirect URI to register with the identity provider; god mode shows it
+// for copying.
+export const OIDC_REDIRECT_URI = `${apiPublicUrl}/api/auth/oauth2/callback/${OIDC_PROVIDER_ID}`;
+
+// redirectURI is explicit for the same reason as in googleOptions.
+const oidcOptions: GenericOAuthConfig = {
+  providerId: OIDC_PROVIDER_ID,
+  clientId: '',
+  clientSecret: '',
+  discoveryUrl: '',
+  scopes: [],
+  pkce: true,
+  redirectURI: OIDC_REDIRECT_URI,
+};
+
+// Loads the stored credentials into that object and reports whether OIDC sign-in can
+// run. A read failure disables the provider rather than failing the request with a
+// stale secret.
+async function refreshOidcOptions(): Promise<boolean> {
+  try {
+    const config = await getOidcConfig();
+    oidcOptions.clientId = config.clientId;
+    oidcOptions.clientSecret = config.clientSecret;
+    oidcOptions.discoveryUrl = config.discoveryUrl;
+    oidcOptions.scopes = config.scopes;
+    oidcOptions.pkce = config.pkce;
+    return isOidcUsable(config);
+  } catch (error) {
+    console.error('[auth] could not read the OIDC credentials:', error);
+    return false;
+  }
+}
+
+// The two conditions better-auth checks before linking an address to an account that
+// already has it are read from different places: `trustedProviders` per request,
+// through the resolver below, and `requireLocalEmailVerified` off the options object
+// at the moment of the decision. The resolver runs first, in the same request, and
+// leaves the setting here for the getter to read.
+let trustProviderEmails = false;
+
+// The trusted providers for one request. The settings are read on the OAuth callback
+// only — the resolver runs on every request to the auth API, and a session check has
+// no linking decision to make.
+async function resolveTrustedProviders(request?: Request): Promise<string[]> {
+  if (!request || !new URL(request.url).pathname.includes('/callback/')) return [];
+  trustProviderEmails = (await getAuthSettings()).trustProviderEmails;
+  return trustProviderEmails ? ['google', OIDC_PROVIDER_ID] : [];
+}
+
+// Whether a new account has to confirm its address before it gets a session. An
+// instance setting, read in `hooks.before` on every password endpoint and served to
+// better-auth through the getter on `emailAndPassword` below: sign-up reads the
+// option off the options object at the moment it decides whether to open a session,
+// so a getter is what lets the stored setting reach a config that is built once.
+let verificationRequired = false;
+
+// The endpoints of the email/password form, including the two the magic link uses.
+// Turning password authentication off refuses all of them, so a link issued before
+// the switch was flipped cannot still be redeemed. Passkey sign-in is not here: a
+// passkey is only ever added to an account that already exists, so it cannot be used
+// to get around single sign-on.
+const PASSWORD_PATHS = new Set([
+  '/sign-up/email',
+  '/sign-in/email',
+  '/sign-in/username',
+  '/forget-password',
+  '/reset-password',
+  '/sign-in/magic-link',
+  '/magic-link/verify',
+]);
 
 // The registration gate: who may create an account. Both sign-up paths run it — the
 // email form checks it up front (below), and the user create hook catches every other
@@ -142,6 +312,55 @@ function randomSuffix(): string {
   return String(100 + randomInt(900));
 }
 
+// Accounts that need no personal workspace made: they own a workspace, or are the
+// instance owner or an agent's bot user. Kept per process, so once an account is known a
+// request costs a lookup here and nothing in the database.
+const settled = new Set<string>();
+
+// The personal workspace of an account that owns none, while personal workspaces are on,
+// named after the person. Sign-up calls it, and apps/api on every request, so an account
+// made before personal workspaces, by SCIM, or while they were off gets its own without
+// signing in again. Nothing in the API creates a workspace; an edition that lets a
+// person own more mounts a route of its own. The instance owner owns the instance
+// workspace instead, and an agent's bot user is no person.
+// ponytail: an account with no workspace while they are off reads the setting on each
+// request; cache it with the setting if that ever shows.
+export async function ensurePersonalWorkspace(userId: string): Promise<void> {
+  if (settled.has(userId)) return;
+  if (!(await getAuthSettings()).personalWorkspaces) return;
+  await db.transaction(async (tx) => {
+    // Two sign-ins at once would otherwise both find none.
+    const [account] = await tx
+      .select({ name: schema.user.name, email: schema.user.email, role: schema.user.role })
+      .from(schema.user)
+      .where(eq(schema.user.id, userId))
+      .for('update');
+    if (!account || account.role === 'god') return;
+    const [owned] = await tx
+      .select({ n: sql`1` })
+      .from(schema.workspaceManager)
+      .where(
+        and(eq(schema.workspaceManager.userId, userId), eq(schema.workspaceManager.role, 'owner')),
+      )
+      .limit(1);
+    const [agent] = await tx
+      .select({ n: sql`1` })
+      .from(schema.aiAgent)
+      .where(eq(schema.aiAgent.userId, userId))
+      .limit(1);
+    if (owned || agent) return;
+    const name = (account.name.trim() || account.email.split('@')[0]!).slice(0, 60);
+    await createWorkspace(tx, name, userId);
+  });
+  settled.add(userId);
+}
+
+// After an account stops owning a workspace (it deleted or handed over its own), so the
+// next request makes it a fresh one while personal workspaces are on.
+export function forgetPersonalWorkspace(userId: string): void {
+  settled.delete(userId);
+}
+
 // True when an agent of some project already answers to this handle. A mention is
 // resolved against members and agents at once, so the two share one namespace: a
 // member cannot take a name an agent uses, and the check for the other direction
@@ -161,7 +380,7 @@ async function isAgentHandle(handle: string): Promise<boolean> {
 // local part, with everything the plugin's validator rejects removed — and the owner
 // changes it later in the profile. A name already in use gets a random suffix, and
 // the check repeats until the name is free.
-async function generateUsername(email: string): Promise<string> {
+export async function generateUsername(email: string): Promise<string> {
   const stem =
     email
       .split('@')[0]
@@ -179,9 +398,17 @@ async function generateUsername(email: string): Promise<string> {
   return candidate;
 }
 
+// Personal API key lifetime. The plugin's option is typed as milliseconds but the
+// handler applies it as seconds (the same unit as the `expiresIn` a client sends),
+// so it is held in seconds here. The maximum is in days, as the plugin reads it.
+const DAY_SEC = 24 * 60 * 60;
+export const API_KEY_DEFAULT_EXPIRES_IN_SEC = 90 * DAY_SEC;
+export const API_KEY_MAX_EXPIRES_IN_DAYS = 365;
+
 export const auth = betterAuth({
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
+  onAPIError: oauthErrorURL ? { errorURL: oauthErrorURL } : undefined,
 
   database: drizzleAdapter(db, {
     provider: 'pg',
@@ -192,22 +419,31 @@ export const auth = betterAuth({
       verification: schema.verification,
       passkey: schema.passkey,
       apikey: schema.apikey,
+      oauthApplication: schema.oauthApplication,
+      oauthAccessToken: schema.oauthAccessToken,
+      oauthConsent: schema.oauthConsent,
     },
   }),
 
   emailAndPassword: {
     enabled: true,
-    // Whether a new account must confirm its address is an instance setting, read
-    // per request in the hooks below, so it stays false here (a static true would
-    // lock out every account the moment the setting is flipped off).
-    requireEmailVerification: false,
+    // While this is true, sign-up answers without a session and a duplicate address
+    // gets the same answer as a new one; sign-in of an unconfirmed account is
+    // refused in the hook below before better-auth's own check runs.
+    get requireEmailVerification() {
+      return verificationRequired;
+    },
     autoSignIn: true,
+    // A reset is how a stolen password is dealt with, so every session opened with
+    // the old one ends with it. The signed-in change-password form sends
+    // revokeOtherSessions for the same reason.
+    revokeSessionsOnPasswordReset: true,
     sendResetPassword: async ({ user, url }) => {
       await sendAuthEmail({
         to: user.email,
         subject: 'Reset your password',
         text: 'Use the link below to set a new password. Ignore this email if you did not ask for it.',
-        url,
+        url: withPublicOrigin(url),
       });
     },
   },
@@ -224,7 +460,7 @@ export const auth = betterAuth({
         to: user.email,
         subject: 'Confirm your email address',
         text: 'Use the link below to confirm this address and finish signing up.',
-        url,
+        url: withPublicOrigin(url),
       });
     },
   },
@@ -232,17 +468,30 @@ export const auth = betterAuth({
   // Google sign-in. The provider is always mounted; whether it may run is decided per
   // request in the hook below, the same way the magic link is handled. The factory
   // runs once, at startup, and returns the shared options object described above.
-  //
-  // Account linking is left at better-auth's defaults: a Google address that already
-  // has an account signs into it and gains a linked google account row, but only when
-  // that account's email is confirmed (accountLinking.requireLocalEmailVerified
-  // defaults to true). Google itself always reports a verified address, and after a
-  // successful link better-auth marks the local user confirmed too.
   socialProviders: {
     google: async () => {
       await refreshGoogleOptions();
       return googleOptions;
     },
+  },
+
+  // A provider address that already has an account signs into it and gains a linked
+  // account row, rather than being refused as a duplicate. By default that happens
+  // only when the provider reported the address as verified and the local account
+  // confirmed its own — Google always reports a verified address, an OIDC provider
+  // need not, and an instance with no mail provider has no confirmed accounts at
+  // all. The instance setting drops both conditions; after a successful link
+  // better-auth marks the local user confirmed too.
+  account: {
+    accountLinking: {
+      trustedProviders: resolveTrustedProviders,
+      get requireLocalEmailVerified() {
+        return !trustProviderEmails;
+      },
+    },
+    // generic-oauth stores id_token unencrypted, so this covers only the access and
+    // refresh tokens.
+    encryptOAuthTokens: true,
   },
 
   // Extra column on the user table. Not client-settable (input: false) — the role
@@ -255,6 +504,14 @@ export const auth = betterAuth({
         defaultValue: 'user',
         input: false,
       },
+      // Deprovisioning flag, written only over SCIM while it acts on the whole instance.
+      // Nullable: read it through isAccountDeactivated, which takes only `false`.
+      active: {
+        type: 'boolean',
+        required: false,
+        defaultValue: true,
+        input: false,
+      },
     },
   },
 
@@ -262,8 +519,50 @@ export const auth = betterAuth({
   // per request, so god mode can change them without a restart.
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      // Read here so the two sign-in endpoints, which also go through the
+      // verification gate below, make one query instead of two.
+      const passwordSettings = PASSWORD_PATHS.has(ctx.path) ? await getAuthSettings() : null;
+      if (passwordSettings) verificationRequired = passwordSettings.requireEmailVerification;
+      // The api will not let the switch be turned off while no OAuth provider is
+      // configured, so this cannot leave an instance with no way in.
+      if (passwordSettings && !passwordSettings.emailPassword) {
+        throw new APIError('FORBIDDEN', {
+          code: 'PASSWORD_AUTH_DISABLED',
+          message: 'Password sign-in is disabled on this instance',
+        });
+      }
+
+      // RFC 7591 makes `client_name` optional, and the MCP plugin stores it as the
+      // client's name, which its table requires.
+      if (ctx.path === '/mcp/register') {
+        const body = ctx.body as { client_name?: string } | undefined;
+        if (body && !body.client_name) {
+          return { context: { body: { ...body, client_name: 'MCP client' } } };
+        }
+        return;
+      }
+
+      // Any client can register itself, and the MCP plugin releases the code straight to
+      // its redirect URI unless the request asks for consent, so every request asks.
+      if (ctx.path === '/mcp/authorize') {
+        return { context: { query: { ...ctx.query, prompt: 'consent' } } };
+      }
+
       if (ctx.path === '/sign-up/email') {
         await assertRegistrationAllowed((ctx.body as { email?: string } | undefined)?.email ?? '');
+        return;
+      }
+
+      // Both halves of the OIDC round trip. The refusal carries a code because the
+      // callback turns it into the ?error= it redirects with; without one the
+      // callback fails the request instead.
+      if (ctx.path === '/sign-in/oauth2' || ctx.path.startsWith('/oauth2/callback/')) {
+        if (!(await refreshOidcOptions())) {
+          throw new APIError('FORBIDDEN', {
+            code: 'OIDC_DISABLED',
+            message: 'Single sign-on is disabled on this instance',
+          });
+        }
         return;
       }
 
@@ -283,13 +582,8 @@ export const auth = betterAuth({
       // /sign-in/email or /sign-in/username depending on what was typed, and the
       // instance gate has to apply either way.
       if (ctx.path === '/sign-in/email' || ctx.path === '/sign-in/username') {
-        const settings = await getAuthSettings();
+        const settings = passwordSettings ?? (await getAuthSettings());
         if (!settings.requireEmailVerification) return;
-        // Holding an account back is only fair while a confirmation link can still
-        // be sent: with the mail provider gone, an unconfirmed account has no way
-        // out and the gate would lock it forever. This is the same condition the
-        // public /auth-config reports, so the sign-in screen and the gate agree.
-        if (!(await hasConfiguredEmailProvider())) return;
         const body = ctx.body as { email?: string; username?: string } | undefined;
         const identifier =
           ctx.path === '/sign-in/email'
@@ -310,6 +604,29 @@ export const auth = betterAuth({
         if (handle && (await isAgentHandle(handle))) {
           throw new APIError('BAD_REQUEST', {
             message: 'Username is already taken. Please try another.',
+          });
+        }
+        return;
+      }
+
+      // A key resolves to its owner's session, so a request carrying a leaked key
+      // reaches the key endpoints. It may not issue another one: a new key starts a
+      // fresh lifetime, which is the expiry of the leaked key renewed under a
+      // different row. Issuing a key is left to a signed-in session. The server-side
+      // call that issues an agent's key carries no request and is unaffected.
+      if (ctx.path === '/api-key/create' && ctx.request?.headers.get('x-api-key')) {
+        throw new APIError('FORBIDDEN', {
+          message: 'An API key cannot create another API key. Sign in to create one.',
+        });
+      }
+
+      // The lifetime is fixed at creation for the same reason; a longer one is a new
+      // key, created from a session.
+      if (ctx.path === '/api-key/update') {
+        const body = ctx.body as { expiresIn?: number | null } | undefined;
+        if (body && body.expiresIn !== undefined) {
+          throw new APIError('FORBIDDEN', {
+            message: 'The expiry of an API key cannot be changed. Create a new key instead.',
           });
         }
       }
@@ -348,6 +665,39 @@ export const auth = betterAuth({
             },
           };
         },
+        after: async (user) => {
+          if (user.role === 'god') {
+            await db
+              .insert(schema.workspaceManager)
+              .values({
+                workspaceId: await instanceWorkspaceId(db),
+                userId: user.id,
+                role: 'owner',
+              })
+              .onConflictDoNothing();
+          } else {
+            await ensurePersonalWorkspace(user.id);
+          }
+        },
+      },
+    },
+    session: {
+      create: {
+        // Every sign-in method ends here, so one check covers password, magic link,
+        // passkey, Google and OIDC. Deactivation arrives over SCIM; apps/api refuses
+        // the sessions that are already open.
+        before: async (session) => {
+          const [account] = await db
+            .select({ active: schema.user.active })
+            .from(schema.user)
+            .where(eq(schema.user.id, session.userId));
+          if (account && isAccountDeactivated(account)) {
+            throw new APIError('FORBIDDEN', {
+              code: 'ACCOUNT_DEACTIVATED',
+              message: 'This account is deactivated',
+            });
+          }
+        },
       },
     },
   },
@@ -376,6 +726,13 @@ export const auth = betterAuth({
       // Brand prefix so a leaked key is identifiable by secret scanners and in logs.
       // The trailing underscore separates it from the random part (itp_<64 chars>).
       defaultPrefix: 'itp_',
+      // A key is a full-account credential, so one that was forgotten stops working
+      // on its own. The caller may pick a shorter or longer life up to the maximum;
+      // an agent's key is the exception, cleared where it is issued in apps/api.
+      keyExpiration: {
+        defaultExpiresIn: API_KEY_DEFAULT_EXPIRES_IN_SEC,
+        maxExpiresIn: API_KEY_MAX_EXPIRES_IN_DAYS,
+      },
       rateLimit: {
         enabled: true,
         timeWindow: 1000,
@@ -396,10 +753,16 @@ export const auth = betterAuth({
           to: email,
           subject: 'Your sign-in link',
           text: 'Use the link below to sign in. It works once and expires shortly.',
-          url,
+          url: withPublicOrigin(url),
         });
       },
     }),
+    // A single generic OIDC/OAuth2 provider, configured by the instance owner and
+    // discovered from its well-known document. Adds /sign-in/oauth2 and
+    // /oauth2/callback/:providerId; it reuses the `account` table, so it adds none.
+    // The config array is materialised at startup — see oidcOptions above for why
+    // there is exactly one entry and why its fields are mutated rather than replaced.
+    genericOAuth({ config: [oidcOptions] }),
     // Usernames: a second identifier next to the address, unique across the
     // instance. Adds `username` / `display_username` to the user table and the
     // /sign-in/username endpoint the sign-in screen uses when the visitor typed a
@@ -408,6 +771,18 @@ export const auth = betterAuth({
     username({
       minUsernameLength: USERNAME_MIN_LENGTH,
       maxUsernameLength: USERNAME_MAX_LENGTH,
+    }),
+    // Native OAuth 2.1 provider for Streamable HTTP MCP clients. It uses the
+    // existing Better Auth session, requires PKCE, and supports dynamic public
+    // clients such as ChatGPT without exposing a personal API key.
+    mcp({
+      loginPage: `${trustedOrigins[0]}/login`,
+      resource: `${apiPublicUrl}/mcp`,
+      oidcConfig: {
+        loginPage: `${trustedOrigins[0]}/login`,
+        requirePKCE: true,
+        consentPage: `${trustedOrigins[0]}/oauth/consent`,
+      },
     }),
     // OpenAPI reference for the better-auth handler. Serves a Scalar UI at
     // /api/auth/reference and the raw schema at /api/auth/open-api/generate-schema.
@@ -420,11 +795,13 @@ export const auth = betterAuth({
   // The frontend runs on a different origin (Next :3001) — allow its requests.
   trustedOrigins,
 
-  // The username plugin's /is-username-available answers for anyone, and a username
-  // is derived from the address, so the endpoint would tell a stranger which
-  // addresses are registered. Nothing in the app calls it — the profile form learns
-  // a name is taken from updateUser's error.
-  disabledPaths: ['/is-username-available'],
+  // /is-username-available answers for anyone, and a username is derived from the
+  // address, so it would tell a stranger which addresses are registered. Nothing in
+  // the app calls it — the profile form learns a name is taken from updateUser's
+  // error. /oauth2/link attaches an OIDC identity to the signed-in account, which no
+  // screen offers: better-auth already links a sign-in to a matching confirmed
+  // address on its own.
+  disabledPaths: ['/is-username-available', '/oauth2/link'],
 
   advanced: {
     // Share the session cookie across subdomains when COOKIE_DOMAIN is the parent
@@ -442,15 +819,46 @@ export const auth = betterAuth({
       : {}),
     // For a single site (localhost / one domain) "lax" is enough. Subdomains of one
     // registrable domain are same-site, so "lax" cookies are still sent between them.
+    ...(hostPrefixedCookies
+      ? {
+          useSecureCookies: false,
+          cookiePrefix: '__Secure-better-auth',
+          cookies: Object.fromEntries(
+            SESSION_COOKIES.map((name) => [
+              name,
+              { name: `__Host-better-auth.${name}`, attributes: { path: '/', secure: true } },
+            ]),
+          ),
+        }
+      : {}),
     defaultCookieAttributes: {
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: hostPrefixedCookies || process.env.NODE_ENV === 'production',
     },
   },
 });
 
 export type Auth = typeof auth;
 export type Session = Auth['$Infer']['Session'];
+
+// A key the apiKey plugin will not accept — expired, revoked or malformed — makes
+// it throw out of getSession instead of returning no session, which a caller can
+// only report as a 500. Such a request carries no session, so it is answered as
+// one, and a key that reached its expiry is refused like any other unauthenticated
+// request. A refusal for another reason, a rate-limited key among them, still
+// propagates: it is not the same answer.
+export async function getSessionFromHeaders(
+  headers: Headers,
+): Promise<Awaited<ReturnType<typeof auth.api.getSession>>> {
+  try {
+    return await auth.api.getSession({ headers });
+  } catch (error) {
+    if (error instanceof APIError && (error.statusCode === 401 || error.statusCode === 403)) {
+      return null;
+    }
+    throw error;
+  }
+}
 
 // Instance-wide authentication settings (registration mode, mail provider, invite
 // links). Read here by the sign-up gate and the mail senders; managed over HTTP by
@@ -461,21 +869,40 @@ export {
   setAuthSettings,
   getEmailSettings,
   setEmailSettings,
-  getEmailConfig,
-  getProjectEmailConfig,
-  hasConfiguredEmailProvider,
+  resolveEmailConfig,
   getGoogleSettings,
   setGoogleSettings,
   getGoogleConfig,
   hasConfiguredGoogle,
+  getOidcSettings,
+  setOidcSettings,
+  getOidcConfig,
+  getOidcLabel,
+  hasConfiguredOidc,
+  getScimSettings,
+  setScimSettings,
+  rotateScimToken,
+  verifyScimToken,
+  setWorkspaceScim,
+  workspaceScim,
+  isAccountDeactivated,
 } from './instance';
 export type {
   RegistrationMode,
   AuthSettings,
   InstanceEmailDto,
   InstanceEmailPatch,
-  InstanceEmailConfig,
   InstanceGoogleDto,
   InstanceGooglePatch,
   InstanceGoogleConfig,
+  InstanceOidcDto,
+  InstanceOidcPatch,
+  InstanceOidcConfig,
+  WorkspaceScimDto,
 } from './instance';
+
+export {
+  withMcpAuth,
+  oAuthDiscoveryMetadata,
+  oAuthProtectedResourceMetadata,
+} from 'better-auth/plugins';

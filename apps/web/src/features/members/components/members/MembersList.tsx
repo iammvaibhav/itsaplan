@@ -1,48 +1,74 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import type { MemberRow as Member } from '@/lib/api';
+import type { MemberKind, MemberRow as Member } from '@/lib/api/endpoints/members';
 import ConfirmDialog from '@/components/common/overlay/ConfirmDialog';
 import ListSkeleton from '@/components/common/skeleton/ListSkeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import MembersEmptyState from '@/components/common/page/MembersEmptyState';
+import SearchInput from '@/components/common/SearchInput';
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useMembersQuery, useRemoveMember } from '@/services/members.service';
-import { useRolesQuery } from '@/services/roles.service';
+import { useTeamRoleOptionsQuery } from '@/services/roles.service';
+import { useSearchTerm } from '@/hooks/useSearchTerm';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSession } from '@/lib/auth-client';
+import ListPager from '@/components/common/ListPager';
+import { usePaging } from '@/hooks/usePaging';
 import MemberRow from './MemberRow';
 
-// The project's members, people first and AI agents in their own group below.
-// The last owner is protected — the API rejects removing them and the row's
-// action is disabled too.
-export default function MembersList({ projectKey }: { projectKey: string }) {
+// The project's members, newest membership first, a page at a time. People and AI
+// agents share one list and are told apart by the tabs, so neither is pushed off the
+// first page by the other; the search runs on the server, within the open tab. The
+// last owner is protected — the API rejects removing them and the row's action is
+// disabled too.
+export default function MembersList({
+  projectKey,
+  teamId,
+}: {
+  projectKey: string;
+  teamId: number;
+}) {
   const t = useTranslations('members');
-  const membersQuery = useMembersQuery(projectKey);
-  const { isOwner } = usePermissions();
+  const [kind, setKind] = useState<MemberKind>('all');
+  const { search, setSearch, term } = useSearchTerm();
+  const paging = usePaging();
+  const { can, isAdmin } = usePermissions();
   const { data: session } = useSession();
   const currentUserId = session?.user.id ?? null;
   const removeMember = useRemoveMember(projectKey);
-  // Roles feed the per-member role select; only an owner can reassign, so only an
-  // owner needs the list fetched.
-  const rolesQuery = useRolesQuery(projectKey, isOwner);
+  // Roles feed the per-member role select, so the list is only fetched for a reader
+  // who gets one.
+  const canEdit = can('members_manage', 'edit') || isAdmin;
+  const rolesQuery = useTeamRoleOptionsQuery(canEdit ? teamId : null);
   const router = useRouter();
   const [target, setTarget] = useState<Member | null>(null);
 
-  const members = membersQuery.data ?? [];
+  const membersQuery = useMembersQuery(projectKey, { search: term, kind, ...paging.params });
+
+  const members = membersQuery.data?.items ?? [];
   const roles = rolesQuery.data ?? [];
-  const ownerCount = members.filter((m) => m.role === 'owner').length;
-  const groups = [
-    { key: 'people', label: t('groups.people'), rows: members.filter((m) => !m.isAgent) },
-    { key: 'agents', label: t('groups.agents'), rows: members.filter((m) => m.isAgent) },
-  ].filter((group) => group.rows.length > 0);
+  const total = membersQuery.data?.total ?? 0;
+  const ownerCount = membersQuery.data?.ownerCount ?? 0;
+
+  function onKindChange(next: string) {
+    setKind(next as MemberKind);
+    paging.reset();
+  }
+
+  function onSearchChange(next: string) {
+    setSearch(next);
+    paging.reset();
+  }
+
+  // The placeholder names what the open tab holds, so the search says what it covers.
+  const searchPlaceholder = {
+    all: t('search.all'),
+    human: t('search.people'),
+    agent: t('search.agents'),
+  }[kind];
 
   if (membersQuery.isPending) return <ListSkeleton className="mb-8" rowClassName="h-14" />;
 
@@ -62,61 +88,69 @@ export default function MembersList({ projectKey }: { projectKey: string }) {
   }
 
   return (
-    <div className="mb-8 space-y-4">
-      <Table className="min-w-[720px] table-fixed">
-        <colgroup>
-          <col className="w-[36%]" />
-          <col className="w-[17%]" />
-          <col className="w-[17%]" />
-          <col className="w-[13%]" />
-          <col className="w-[17%]" />
-        </colgroup>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="text-xs font-medium text-muted-foreground">
-              {t('columns.member')}
-            </TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground">
-              {t('columns.role')}
-            </TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground">
-              {t('columns.timezone')}
-            </TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground">
-              {t('columns.joined')}
-            </TableHead>
-            <TableHead className="text-right text-xs font-medium text-muted-foreground">
-              {t('columns.actions')}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        {/* The row before a group heading drops its border: the heading already
-            separates the two groups, and a line above it reads as a second one. */}
-        <TableBody className="[&_tr:has(+tr[data-group-heading])]:border-b-0">
-          {groups.map((group) => (
-            <Fragment key={group.key}>
-              <TableRow data-group-heading className="border-0 hover:bg-transparent">
-                <TableCell
-                  colSpan={5}
-                  className="px-3 pt-5 pb-1 text-xs font-medium text-muted-foreground"
-                >
-                  {group.label}
-                </TableCell>
-              </TableRow>
-              {group.rows.map((m) => (
-                <MemberRow
-                  key={m.userId}
-                  projectKey={projectKey}
-                  member={m}
-                  roles={roles}
-                  isLastOwner={m.role === 'owner' && ownerCount === 1}
-                  onRemove={setTarget}
-                />
-              ))}
-            </Fragment>
-          ))}
-        </TableBody>
-      </Table>
+    <div className="mb-8 flex min-h-0 flex-1 flex-col gap-4">
+      <Tabs value={kind} onValueChange={onKindChange}>
+        <div className="flex items-center justify-between gap-3">
+          <TabsList variant="line" className="w-auto border-b-0">
+            <TabsTrigger value="all">{t('tabs.all')}</TabsTrigger>
+            <TabsTrigger value="human">{t('tabs.people')}</TabsTrigger>
+            <TabsTrigger value="agent">{t('tabs.agents')}</TabsTrigger>
+          </TabsList>
+          <SearchInput
+            value={search}
+            onChange={onSearchChange}
+            placeholder={searchPlaceholder}
+            className="w-60 shrink-0"
+          />
+        </div>
+      </Tabs>
+
+      {members.length === 0 ? (
+        <MembersEmptyState kind={kind} searching={term !== undefined} />
+      ) : (
+        <Table className="min-w-[720px] table-fixed">
+          <colgroup>
+            <col className="w-[36%]" />
+            <col className="w-[17%]" />
+            <col className="w-[17%]" />
+            <col className="w-[13%]" />
+            <col className="w-[17%]" />
+          </colgroup>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="text-xs font-medium text-muted-foreground">
+                {t('columns.member')}
+              </TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground">
+                {t('columns.role')}
+              </TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground">
+                {t('columns.timezone')}
+              </TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground">
+                {t('columns.joined')}
+              </TableHead>
+              <TableHead className="text-right text-xs font-medium text-muted-foreground">
+                {t('columns.actions')}
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {members.map((m) => (
+              <MemberRow
+                key={m.userId}
+                projectKey={projectKey}
+                member={m}
+                roles={roles}
+                isLastOwner={m.role === 'owner' && ownerCount === 1}
+                onRemove={setTarget}
+              />
+            ))}
+          </TableBody>
+        </Table>
+      )}
+
+      {total > 0 && <ListPager paging={paging} total={total} />}
 
       {target && (
         <ConfirmDialog

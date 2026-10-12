@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useProjectsQuery } from '@/services/projects.service';
+import { useTeamsQuery } from '@/services/teams.service';
 import { projectPath } from '@/utils/paths';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
@@ -11,7 +12,7 @@ import AppSidebar from '@/components/layout/AppSidebar';
 import AppHeader from '@/components/layout/AppHeader';
 import CommandLayer from '@/components/layout/CommandLayer';
 import NewProjectModal from '@/components/layout/NewProjectModal';
-import NewIssueModal from '@/features/issue/components/create/NewIssueModal';
+import NewIssueAnyProjectModal from '@/features/issue/components/create/NewIssueAnyProjectModal';
 import AllTicketsBoard from '@/features/work-items/components/all-tickets/AllTicketsBoard';
 
 // The global All tickets board. A top-level route on purpose: it must be
@@ -25,17 +26,20 @@ export default function TicketsPage() {
   const [creatingProject, setCreatingProject] = useState(false);
   const [creatingIssue, setCreatingIssue] = useState(false);
   const [showCommand, setShowCommand] = useState(false);
+  // As in the project Shell with no project open: a project is created in the first
+  // team the user owns or manages; with none, New project is not offered.
+  const newProjectTeamId = (useTeamsQuery().data ?? []).find((one) => one.role !== 'member')?.id;
+  const openNewProject = newProjectTeamId != null ? () => setCreatingProject(true) : null;
 
   useKeyboardShortcuts({
     hasProject: false,
     hasChat: false,
-    projects: projects ?? [],
     overlayOpen: showCommand || creatingProject || creatingIssue,
     onToggleCommand: () => setShowCommand((v) => !v),
-    onSelectProject: (key) => router.push(projectPath(key)),
     onChangeView: () => {},
     onNewIssue: () => setCreatingIssue(true),
-    onNewProject: () => setCreatingProject(true),
+    onNewInitiative: () => {},
+    onNewProject: () => openNewProject?.(),
     onSettings: () => {},
     onToggleChat: () => {},
   });
@@ -45,7 +49,6 @@ export default function TicketsPage() {
         projects={projects ?? []}
         currentProjectKey={null}
         onSelectProject={(key) => router.push(projectPath(key))}
-        onNewProject={() => setCreatingProject(true)}
       />
       <SidebarInset className="min-w-0">
         <AppHeader
@@ -72,15 +75,17 @@ export default function TicketsPage() {
         onViewChange={() => {}}
         onNewIssue={() => setCreatingIssue(true)}
         onSelectAll={() => {}}
-        onNewProject={() => setCreatingProject(true)}
+        onNewInitiative={() => {}}
+        onNewProject={openNewProject}
         onSelectProject={(key) => router.push(projectPath(key))}
         onOpenIssue={() => {}}
         onIssueDeleted={() => {}}
         onToggleChat={() => {}}
       />
 
-      {creatingProject && (
+      {creatingProject && newProjectTeamId != null && (
         <NewProjectModal
+          teamId={newProjectTeamId}
           onClose={() => setCreatingProject(false)}
           onCreated={(key) => {
             setCreatingProject(false);
@@ -90,7 +95,7 @@ export default function TicketsPage() {
       )}
 
       {creatingIssue && (
-        <NewIssueModal
+        <NewIssueAnyProjectModal
           projects={projects ?? []}
           defaults={{}}
           onClose={() => setCreatingIssue(false)}

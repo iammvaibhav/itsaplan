@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useShellRoute } from '@/hooks/useShellRoute';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { ReactFlowProvider } from '@xyflow/react';
 import { useShell } from '@/context/shellContext';
-import { ApiError } from '@/lib/api';
+import { ApiError } from '@/lib/api/core/client';
 import { usePermissions } from '@/hooks/usePermissions';
 import { notePath, notesPath } from '@/utils/paths';
 import { qk } from '@/services/queryKeys';
@@ -17,7 +18,6 @@ import {
   useCreateNoteBoard,
   useRenameNoteBoard,
   useDeleteNoteBoard,
-  flattenBoardPages,
 } from './services/noteBoards.service';
 import { useNoteBoardMru, type MruEntry } from './hooks/useNoteBoardMru';
 import type { NewBoardVisibility } from './utils/visibility';
@@ -35,18 +35,16 @@ const MAX_TABS = 5;
 // full canvas) and moves it to the front.
 export default function NotesPage() {
   const { project } = useShell();
-  const params = useParams<{ projectKey: string; boardId?: string }>();
+  const params = useParams<{ boardId?: string }>();
   const router = useRouter();
   const qc = useQueryClient();
-  const projectKey = params.projectKey;
+  const projectKey = useShellRoute().projectKey ?? '';
   const t = useTranslations('notes');
   const { can } = usePermissions();
 
   const { entries: mru, record, remove: removeMru } = useNoteBoardMru(projectKey);
-  // The first page of the switcher list, reused to top up the tabs. Shares its
-  // cache with the switcher's empty-query page.
+  // The switcher's unfiltered list, reused to top up the tabs and sharing its cache.
   const seedQuery = useNoteBoardSearch(projectKey, '');
-  const seed = flattenBoardPages(seedQuery.data?.pages);
 
   const createBoard = useCreateNoteBoard(projectKey);
   const renameBoard = useRenameNoteBoard(projectKey);
@@ -55,14 +53,14 @@ export default function NotesPage() {
   const tabs = useMemo<MruEntry[]>(() => {
     const result = [...mru];
     const seen = new Set(mru.map((e) => e.id));
-    for (const b of seed) {
+    for (const b of seedQuery.data ?? []) {
       if (result.length >= MAX_TABS) break;
       if (seen.has(b.id)) continue;
       result.push({ id: b.id, name: b.name, visibility: b.visibility });
       seen.add(b.id);
     }
     return result;
-  }, [mru, seed]);
+  }, [mru, seedQuery.data]);
 
   const routeId = params.boardId ? Number(params.boardId) : null;
   const activeBoardId = routeId ?? tabs[0]?.id ?? null;

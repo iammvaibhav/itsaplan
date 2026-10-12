@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { ArrowUp, Bot, RotateCw, Square } from 'lucide-react';
-import type { AiAgent } from '@/lib/api';
+import { useRef, useState, type ReactNode } from 'react';
+import { ArrowUp, Bot, Paperclip, RotateCw, Square, X } from 'lucide-react';
+import { uploadChatAttachment, type ChatAttachment } from '@/lib/api/endpoints/agentChat';
+import type { AiAgent } from '@/lib/api/endpoints/agents';
 import type { ChatMessage, ChatStatus, PendingMessage } from '@/hooks/useAgentChat';
 import { AgentChatTranscript } from './AgentChatTranscript';
 import { AgentRunnerStatus } from './AgentRunnerStatus';
@@ -23,6 +24,8 @@ import {
 } from '@/components/ui/input-group';
 import { useTranslations } from 'next-intl';
 
+const MAX_ATTACHMENTS = 10;
+
 // The running transcript and the composer for one agent conversation. The
 // conversation state lives above this panel (in the agent chat host), so it is
 // presentational: it renders what it is given and reports sends.
@@ -40,9 +43,11 @@ export function AgentChatPanel({
   onRemovePending,
   onReset,
   composerStart,
+  composerEnd,
   hasEarlierMessages,
   isLoadingEarlier,
   onLoadEarlier,
+  projectKey,
 }: {
   agent: AiAgent;
   messages: ChatMessage[];
@@ -56,12 +61,21 @@ export function AgentChatPanel({
   // Rendered at the start of the composer's button row, before the panel's own
   // buttons.
   composerStart?: ReactNode;
+  // Rendered at the end of that row, before the stop and send buttons.
+  composerEnd?: ReactNode;
   hasEarlierMessages?: boolean;
   isLoadingEarlier?: boolean;
   onLoadEarlier?: () => void;
+  // Given, the composer offers attaching a file for the agent to work with (to
+  // import issues from, or to read).
+  projectKey?: string;
 }) {
   const t = useTranslations('common.agentChat');
   const [input, setInput] = useState('');
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // An external agent answers on its runner, so with none polling the message would sit
   // in the queue with nothing to take it. The composer says so instead of accepting it.
   // A message typed while the agent is answering is not refused — it waits its turn.
@@ -72,7 +86,46 @@ export function AgentChatPanel({
     const text = input.trim();
     if (!canSend) return;
     setInput('');
-    onSend(text);
+    // The attached files ride along as text the agent reads; each id is what its
+    // read_chat_attachment tool takes. The transcript renders a marker as the
+    // file name with a download link (see lib/markdown.ts).
+    const marker = attachments
+      .map((a) => `[file: "${a.filename}" (attachment id: ${a.id})]`)
+      .join('\n');
+    setAttachments([]);
+    onSend(marker ? `${text}\n\n${marker}` : text);
+  }
+
+  // The upload route takes one file per request, so a multi-file pick is sent as
+  // one request each and a file that fails does not lose the ones that succeeded.
+  async function attach(files: FileList | null) {
+    const picked = Array.from(files ?? []);
+    if (picked.length === 0 || uploading) return;
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (attachments.length + picked.length > MAX_ATTACHMENTS) {
+      setUploadError(t('tooManyAttachments', { max: MAX_ATTACHMENTS }));
+      return;
+    }
+    setUploading(true);
+    setUploadError(null);
+    const results = await Promise.allSettled(
+      picked.map((file) => uploadChatAttachment(projectKey!, file)),
+    );
+    const uploaded: ChatAttachment[] = [];
+    const failed: string[] = [];
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        uploaded.push(result.value);
+      } else {
+        const reason = result.reason;
+        failed.push(
+          `${picked[i].name}: ${reason instanceof Error ? reason.message : t('uploadFailed')}`,
+        );
+      }
+    });
+    setAttachments((current) => [...current, ...uploaded]);
+    setUploadError(failed.length > 0 ? failed.join('; ') : null);
+    setUploading(false);
   }
 
   return (
@@ -117,6 +170,41 @@ export function AgentChatPanel({
               submit();
             }}
           >
+            {(attachments.length > 0 || uploadError) && (
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                {attachments.map((a) => (
+                  <span
+                    key={a.id}
+                    className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs"
+                    dir="auto"
+                  >
+                    {a.filename}
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground"
+                      title={t('removeAttachment')}
+                      onClick={() =>
+                        setAttachments((current) => current.filter((x) => x.id !== a.id))
+                      }
+                    >
+                      <X className="size-3" />
+                      <span className="sr-only">{t('removeAttachment')}</span>
+                    </button>
+                  </span>
+                ))}
+                {uploadError && (
+                  <span className="w-full text-xs text-destructive">{uploadError}</span>
+                )}
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.csv,.docx,.pdf,.md,.txt"
+              multiple
+              className="hidden"
+              onChange={(e) => void attach(e.target.files)}
+            />
             <InputGroup className="rounded-2xl border-transparent bg-muted has-[[data-slot=input-group-control]:focus-visible]:border-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-muted/50">
               <InputGroupTextarea
                 // `auto` once there is something to read, so a message keeps the
@@ -152,13 +240,31 @@ export function AgentChatPanel({
                 align="block-end"
                 className="gap-1 px-2.5 pb-2"
                 // The row carries a text cursor, and its own handler focuses an
-                // `input` — this group holds a textarea.
+                // `input` — this group holds a textarea. A control of the row that
+                // opens a popover keeps this row as its React parent while rendering
+                // into a portal, so its clicks arrive here too: refocusing on those
+                // would pull the focus out of the popover and close it.
                 onClick={(e) => {
+                  if (!e.currentTarget.contains(e.target as Node)) return;
                   if ((e.target as HTMLElement).closest('button')) return;
                   e.currentTarget.parentElement?.querySelector('textarea')?.focus();
                 }}
               >
                 {composerStart}
+                {projectKey && (
+                  <InputGroupButton
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="rounded-md text-muted-foreground hover:text-foreground"
+                    title={t('attachFile')}
+                    disabled={uploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Paperclip />
+                    <span className="sr-only">{t('attachFile')}</span>
+                  </InputGroupButton>
+                )}
                 {onReset && (
                   <InputGroupButton
                     type="button"
@@ -174,6 +280,7 @@ export function AgentChatPanel({
                   </InputGroupButton>
                 )}
                 <div className="ms-auto flex items-center gap-1">
+                  {composerEnd}
                   {status !== 'ready' && (
                     <InputGroupButton
                       type="button"

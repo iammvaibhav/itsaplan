@@ -3,21 +3,27 @@
 //
 // - AGENT_ACTIONS: actions the user opts an agent into. The enabled subset is stored
 //   in ai_agent.tools and becomes the tools the runtime exposes. Mutating actions
-//   belong here; so do the note board reads, since notes are an optional feature.
-// - ALWAYS_ON_ACTIONS: read-only actions always granted, so an agent can always see
-//   its project regardless of which actions it is allowed to take. Listed only so
-//   the UI can show them (always enabled, not editable); their keys are never
-//   stored on the agent.
+//   belong here; so do document and note-board reads, since both are optional
+//   project knowledge surfaces.
+// - ALWAYS_ON_ACTIONS: actions always granted, so an agent can always see its
+//   project and read the files dropped in its chat regardless of which other
+//   actions it is allowed to take. Listed only so the UI can show them (always
+//   enabled, not editable); their keys are never stored on the agent.
 //
-// Every key is the name of a route tagged with mcpTool() — the one exception is
-// get_current_date, which has no route behind it (see tools/local.ts). What a tool
+// Every key is the name of a route tagged with mcpTool() — the exceptions are
+// get_current_date and prepare_issue_import, which have no route behind them (see
+// tools/local.ts). What a tool
 // accepts and who may call it come from the route itself (see tools/route-tools.ts);
 // this file adds the allowlist, the UI copy, and the agent-only overrides (see
-// ToolMeta.overrides). An agent's effective rights are the intersection of these keys
-// and its project role.
+// ToolMeta.overrides). An agent's effective rights in a project are the intersection
+// of these keys and the role its membership of that project carries.
+//
+// ToolMeta carries no resource and no action. The permission of an action is the one
+// its route asserts and is read off the route (see actionCatalog in route-tools.ts);
+// restating it here would be a second list that drifts from the guards silently.
 
 // The feature an action belongs to, so the config UI can group the catalog.
-export type ToolGroup = 'issues' | 'initiatives' | 'cycles' | 'notes' | 'project';
+export type ToolGroup = 'issues' | 'initiatives' | 'cycles' | 'documents' | 'notes' | 'project';
 
 export interface ToolMeta {
   key: string;
@@ -112,6 +118,41 @@ export const AGENT_ACTIONS: ToolMeta[] = [
     always: false,
   },
   {
+    key: 'prepare_issue_import',
+    group: 'issues',
+    label: 'Import issues from files',
+    description: 'Turn a table attached in the chat (.xlsx, .csv, .docx) into issues.',
+    always: false,
+  },
+  {
+    key: 'create_checklist',
+    group: 'issues',
+    label: 'Add checklists',
+    description: 'Add a checklist to an issue. It starts empty; its items are added separately.',
+    always: false,
+  },
+  {
+    key: 'create_checklist_item',
+    group: 'issues',
+    label: 'Add checklist items',
+    description: 'Append an item to a checklist on an issue.',
+    always: false,
+  },
+  {
+    key: 'update_checklist_item',
+    group: 'issues',
+    label: 'Update checklist items',
+    description: "Change a checklist item's text, tick it off, or untick it.",
+    always: false,
+  },
+  {
+    key: 'delete_checklist_item',
+    group: 'issues',
+    label: 'Delete checklist items',
+    description: 'Remove one item from a checklist.',
+    always: false,
+  },
+  {
     key: 'create_initiative',
     group: 'initiatives',
     label: 'Create initiatives',
@@ -158,6 +199,41 @@ export const AGENT_ACTIONS: ToolMeta[] = [
     group: 'cycles',
     label: 'Transfer cycle issues',
     description: "Move a cycle's unfinished issues to another cycle, or off any cycle.",
+    always: false,
+  },
+  {
+    key: 'list_documents',
+    group: 'documents',
+    label: 'List documents',
+    description: 'List and search the shared project Docs tree.',
+    always: false,
+  },
+  {
+    key: 'get_document',
+    group: 'documents',
+    label: 'Read documents',
+    description: 'Read a shared project document and its Markdown content.',
+    always: false,
+  },
+  {
+    key: 'create_document',
+    group: 'documents',
+    label: 'Create documents',
+    description: 'Create shared project documents and nested pages.',
+    always: false,
+  },
+  {
+    key: 'update_document',
+    group: 'documents',
+    label: 'Update documents',
+    description: 'Edit document titles, Markdown content, nesting, and order.',
+    always: false,
+  },
+  {
+    key: 'delete_document',
+    group: 'documents',
+    label: 'Delete documents',
+    description: 'Permanently delete shared project documents.',
     always: false,
   },
   {
@@ -217,9 +293,9 @@ export const AGENT_ACTIONS: ToolMeta[] = [
   },
 ];
 
-// Actions that change nothing, always granted to an internal agent so it can read its
-// project and show what it found, regardless of which actions it is allowed to take.
-// Listed for the UI only; these keys are never stored on the agent (see normalizeToolKeys).
+// Always granted to an internal agent so it can read its project and show what it
+// found, regardless of which actions it is allowed to take. Listed for the UI only;
+// these keys are never stored on the agent (see normalizeToolKeys).
 export const ALWAYS_ON_ACTIONS: ToolMeta[] = [
   {
     key: 'create_chart',
@@ -275,6 +351,21 @@ export const ALWAYS_ON_ACTIONS: ToolMeta[] = [
     group: 'issues',
     label: 'List attachments',
     description: 'View the file attachment metadata on an issue.',
+    always: true,
+  },
+  {
+    key: 'upload_chat_attachment',
+    group: 'issues',
+    label: 'Upload chat attachments',
+    description: 'Store a file for the chat (base64 content), for an agent to read or import from.',
+    always: true,
+  },
+  {
+    key: 'read_chat_attachment',
+    group: 'issues',
+    label: 'Read chat attachments',
+    description:
+      'Read a file uploaded in the chat: its metadata and, for a spreadsheet or text file, its content.',
     always: true,
   },
   {

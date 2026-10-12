@@ -35,9 +35,7 @@ export const NoteBoardAccessCandidateListResponse = t.Array(
 );
 
 export const listNoteBoardsQuery = t.Object({
-  q: t.Optional(t.String()),
-  limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })),
-  offset: t.Optional(t.Numeric({ minimum: 0 })),
+  q: t.Optional(t.String({ description: 'Filters by name.' })),
 });
 
 // A board is created public or private; it turns restricted by granting members,

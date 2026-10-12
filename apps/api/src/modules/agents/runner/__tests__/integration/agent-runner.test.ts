@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'bun:test';
 import { apiKeyApi, authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
+import { createAgent, teamOf } from '#tests/helpers/agents';
 
 // The runner queue: a process on the operator's machine authenticates with the
 // external agent's API key, claims one run at a time, and reports the result. Runs
@@ -14,7 +15,7 @@ async function setup() {
   await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
   const view = await asOwner.projects({ projectKey: 'MKT' }).get();
   const columnId = view.data!.columns[0].id;
-  const created = await asOwner.projects({ projectKey: 'MKT' })['ai-agents'].post({
+  const created = await createAgent(asOwner, 'MKT', {
     name: 'Ext Bot',
     username: 'ext',
     kind: 'external',
@@ -87,7 +88,7 @@ describe('agent runner queue', () => {
   it("mixes the agent's own instructions into the system prompt", async () => {
     const { asOwner, asRunner, agent, columnId } = await setup();
     await asOwner
-      .projects({ projectKey: 'MKT' })
+      .teams({ teamId: await teamOf(asOwner, 'MKT') })
       ['ai-agents']({ agentId: agent.id })
       .patch({ instructions: 'Always answer in German.' });
     await queueRun(asOwner, columnId, agent.username);
@@ -124,9 +125,9 @@ describe('agent runner queue', () => {
     expect(res.status).toBe(204);
 
     const history = await asOwner
-      .projects({ projectKey: 'MKT' })
+      .teams({ teamId: await teamOf(asOwner, 'MKT') })
       ['ai-agents']({ agentId: agent.id })
-      .runs.get();
+      .runs.get({ query: {} });
     expect(history.data!.items[0]).toMatchObject({
       id: run.id,
       status: 'success',
@@ -145,9 +146,9 @@ describe('agent runner queue', () => {
     });
 
     const history = await asOwner
-      .projects({ projectKey: 'MKT' })
+      .teams({ teamId: await teamOf(asOwner, 'MKT') })
       ['ai-agents']({ agentId: agent.id })
-      .runs.get();
+      .runs.get({ query: {} });
     expect(history.data!.items[0]).toMatchObject({
       status: 'failed',
       lastError: 'claude exited with 1',
@@ -168,9 +169,11 @@ describe('agent runner queue', () => {
     const { asOwner, asRunner, agent, columnId } = await setup();
     await queueRun(asOwner, columnId, agent.username);
     const run = (await asRunner['agent-runs'].claim.post()).data!.run!;
-    const other = await asOwner
-      .projects({ projectKey: 'MKT' })
-      ['ai-agents'].post({ name: 'Other Bot', username: 'other', kind: 'external' });
+    const other = await createAgent(asOwner, 'MKT', {
+      name: 'Other Bot',
+      username: 'other',
+      kind: 'external',
+    });
     const asOtherRunner = apiKeyApi(other.data!.apiKey!);
 
     expect(
@@ -194,14 +197,18 @@ describe('agent runner queue', () => {
   it('records presence on the agent when its runner polls', async () => {
     const { asOwner, asRunner, agent } = await setup();
     expect(
-      (await asOwner.projects({ projectKey: 'MKT' })['ai-agents']({ agentId: agent.id }).get())
-        .data!.lastSeenAt,
+      (
+        await asOwner
+          .teams({ teamId: await teamOf(asOwner, 'MKT') })
+          ['ai-agents']({ agentId: agent.id })
+          .get()
+      ).data!.lastSeenAt,
     ).toBeNull();
 
     await asRunner['agent-runs'].claim.post();
 
     const after = await asOwner
-      .projects({ projectKey: 'MKT' })
+      .teams({ teamId: await teamOf(asOwner, 'MKT') })
       ['ai-agents']({ agentId: agent.id })
       .get();
     expect(after.data!.lastSeenAt).not.toBeNull();

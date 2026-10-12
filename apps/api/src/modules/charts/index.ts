@@ -21,6 +21,7 @@ export const chartRoutes = new Elysia({ name: 'charts', detail: { tags: ['Charts
   .post('/projects/:projectKey/charts', ({ body }) => body, {
     body: chartSpec,
     projectMember: true,
+    feature: 'dashboards',
     response: { 200: chartSpec, ...commonErrors },
     detail: {
       summary: 'Build a chart',

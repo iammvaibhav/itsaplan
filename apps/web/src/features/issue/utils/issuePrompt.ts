@@ -1,4 +1,5 @@
-import type { Issue, ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { Issue } from '@/lib/api/endpoints/issues';
 import { issuePath } from '@/utils/paths';
 
 // A git-branch-safe handle from the current user: the email local part (or name)
@@ -18,6 +19,16 @@ function titleSlug(title: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 50)
     .replace(/-+$/, '');
+}
+
+export function buildIssueBranchName(
+  issue: Pick<Issue, 'identifier' | 'title'>,
+  user?: { name?: string | null; email?: string | null },
+): string {
+  const handle = userHandle(user?.name, user?.email);
+  const slug = titleSlug(issue.title);
+  const id = issue.identifier.toLowerCase();
+  return `${handle ? `${handle}/` : ''}${slug ? `${id}-${slug}` : id}`;
 }
 
 // Builds the prompt copied by "Copy Prompt", matching Linear's format: a lead
@@ -42,12 +53,9 @@ export function buildIssuePrompt(
   const labels = issue.labelIds
     .map((id) => project.labels.find((l) => l.id === id)?.name)
     .filter((name): name is string => Boolean(name));
-  const url = `${window.location.origin}${issuePath(project.project.key, issue.sequenceNumber)}`;
+  const url = `${window.location.origin}${issuePath(project.project.ref, issue.sequenceNumber)}`;
 
-  const handle = userHandle(user?.name, user?.email);
-  const slug = titleSlug(issue.title);
-  const id = issue.identifier.toLowerCase();
-  const branch = `${handle ? `${handle}/` : ''}${slug ? `${id}-${slug}` : id}`;
+  const branch = buildIssueBranchName(issue, user);
 
   const tags: string[] = [
     `<issue identifier="${issue.identifier}">`,

@@ -1,7 +1,7 @@
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
-// 'system' is the instance provider a project can send through; it carries no
+// 'system' is the instance provider a team can send through; it carries no
 // credentials of its own, so it is only offered where that choice exists.
 export type EmailProvider = 'system' | 'smtp' | 'resend';
 

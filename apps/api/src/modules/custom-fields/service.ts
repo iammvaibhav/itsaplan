@@ -112,15 +112,16 @@ export async function listCustomFields(
   return fields.map((f) => mapField(f, options.get(f.id) ?? []));
 }
 
-// The ids of the member fields of a project an agent can be set into: the ones whose
-// scope holds agents. These are the fields an agent may carry a run trigger for.
-export async function listAgentMemberFieldIds(projectId: number): Promise<number[]> {
+// The ids of the member fields of the given projects an agent can be set into: the ones
+// whose scope holds agents. These are the fields an agent may carry a run trigger for.
+export async function listAgentMemberFieldIds(projectIds: number[]): Promise<number[]> {
+  if (projectIds.length === 0) return [];
   const rows = await db
     .select({ id: customField.id })
     .from(customField)
     .where(
       and(
-        eq(customField.projectId, projectId),
+        inArray(customField.projectId, projectIds),
         eq(customField.fieldType, 'member'),
         inArray(customField.memberScope, ['all', 'agents']),
       ),
@@ -168,25 +169,29 @@ export async function createCustomField(input: {
         sql`${customField.issueTypeId} IS NOT DISTINCT FROM ${issueTypeId}`,
       ),
     );
-  const [row] = await db
-    .insert(customField)
-    .values({
-      projectId: input.projectId,
-      issueTypeId,
-      name: input.name,
-      fieldType: input.fieldType,
-      memberScope: input.fieldType === 'member' ? (input.memberScope ?? 'all') : null,
-      showInBody: input.showInBody ?? false,
-      position: Number(pos),
-    })
-    .returning({ id: customField.id });
   const options = input.options ?? [];
-  if (options.length > 0) {
-    await db
-      .insert(customFieldOption)
-      .values(options.map((value, index) => ({ fieldId: row.id, value, position: index })));
-  }
-  return (await getCustomFieldById(input.projectId, row.id))!;
+  // One transaction, so a rejected option list leaves no field behind.
+  const id = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(customField)
+      .values({
+        projectId: input.projectId,
+        issueTypeId,
+        name: input.name,
+        fieldType: input.fieldType,
+        memberScope: input.fieldType === 'member' ? (input.memberScope ?? 'all') : null,
+        showInBody: input.showInBody ?? false,
+        position: Number(pos),
+      })
+      .returning({ id: customField.id });
+    if (options.length > 0) {
+      await tx
+        .insert(customFieldOption)
+        .values(options.map((value, index) => ({ fieldId: row.id, value, position: index })));
+    }
+    return row.id;
+  });
+  return (await getCustomFieldById(input.projectId, id))!;
 }
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -204,15 +209,14 @@ async function clearFieldValues(tx: Transaction, fieldId: number): Promise<void>
 }
 
 // Clears the members a narrowed scope no longer allows, leaving the rest in place.
-// An agent of the project is one whose bot user backs an ai_agent row of it.
+// An agent is a member whose user id backs an ai_agent row.
 async function clearMembersOutOfScope(
   tx: Transaction,
-  projectId: number,
   fieldId: number,
   scope: MemberScope,
 ): Promise<void> {
   if (scope === 'all') return;
-  const isAgent = sql`EXISTS (SELECT 1 FROM ${aiAgent} WHERE ${aiAgent.userId} = ${issueFieldValue.valueUserId} AND ${aiAgent.projectId} = ${projectId})`;
+  const isAgent = sql`EXISTS (SELECT 1 FROM ${aiAgent} WHERE ${aiAgent.userId} = ${issueFieldValue.valueUserId})`;
   await tx
     .update(issueFieldValue)
     .set({ valueUserId: null })
@@ -299,7 +303,7 @@ export async function updateCustomField(
         await tx.delete(customFieldOption).where(eq(customFieldOption.fieldId, id));
       }
     } else if (memberScope != null && memberScope !== current.memberScope) {
-      await clearMembersOutOfScope(tx, projectId, id, memberScope);
+      await clearMembersOutOfScope(tx, id, memberScope);
     }
 
     // A field that no longer takes agents drops its agent triggers: kept, they would

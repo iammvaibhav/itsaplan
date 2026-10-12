@@ -66,6 +66,12 @@ export function useChatPanel(projectKey: string | null, showByDefault: boolean) 
     });
   }, [projectKey]);
 
+  const openPanel = useCallback(() => {
+    touched.current = true;
+    setOpen(true);
+    if (projectKey) write(openKey(projectKey), 'open');
+  }, [projectKey]);
+
   const toggleMode = useCallback(() => {
     setMode((prev) => {
       const next = prev === 'push' ? 'overlay' : 'push';
@@ -82,5 +88,5 @@ export function useChatPanel(projectKey: string | null, showByDefault: boolean) 
     });
   }, [projectKey]);
 
-  return { open, mode, fullscreen, toggle, toggleMode, toggleFullscreen };
+  return { open, mode, fullscreen, toggle, openPanel, toggleMode, toggleFullscreen };
 }

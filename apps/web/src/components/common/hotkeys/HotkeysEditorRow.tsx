@@ -7,8 +7,8 @@ import { useTranslations } from 'next-intl';
 
 // One shortcut in the editor: what it does, the combination in effect, and the
 // controls to rebind or reset it. Pressing "Change" listens for the next key press
-// and reports the combination it stands for; Escape cancels. A fixed shortcut
-// (positional, or owned by a UI primitive) is shown but cannot be rebound.
+// and reports the combination it stands for; Escape cancels. A fixed shortcut (one
+// owned by a UI primitive) is shown but cannot be rebound.
 export default function HotkeysEditorRow({
   def,
   combo,

@@ -1,42 +1,40 @@
 import {
-  Bell,
   Bot,
-  BookText,
   Clock3,
   Columns3,
+  FileText,
   GitPullRequest,
+  Import,
   Info,
-  KeyRound,
   ListPlus,
   type LucideIcon,
   Shapes,
   SlidersHorizontal,
   Tags,
   Webhook,
-  Wrench,
   Zap,
 } from 'lucide-react';
-import type { PermissionResource } from '@/lib/api';
+import type { PermissionAction, PermissionResource } from '@/lib/api/endpoints/roles';
 
-// The sidebar group a section is listed under: the project-level general
-// settings, workflow configuration, automation/integrations, or the AI section
-// (agents, providers, skills). 'ai-team' and 'ai' sections are listed in the main
-// sidebar's AI Team group — 'ai-team' at its top level, 'ai' inside the
-// "Configure" item — not in the project settings sidebar.
+// The sidebar group a section is listed under: the project-level general settings,
+// workflow configuration, automation/integrations, or the AI section. 'ai-team' and
+// 'ai' sections are listed in the main sidebar's AI Team group, not in the project
+// settings sidebar.
 export type SettingsGroup = 'general' | 'configuration' | 'automation' | 'ai' | 'ai-team';
 
 // The project settings sections, each mounted as its own page at
-// /project/:projectKey/settings/:section, except the 'ai-team' group, which is
-// mounted at /project/:projectKey/ai-team/:section. The slug is the route param; the tab
+// /:team/:projectKey/settings/:section, except the 'ai-team' group, which is
+// mounted at /:team/:projectKey/agents/:section. The slug is the route param; the tab
 // components live in features/settings/components and take { project }. `resource`
-// is the permission resource that gates the section: read to view it, and the
-// create/edit/delete actions gate the controls inside. `group` places it in the
+// is the permission resource that gates the section: `viewAction` (read unless set)
+// to view it, and the create/edit/delete actions gate the controls inside. `group` places it in the
 // sidebar (see CONFIGURATION_SECTIONS / AUTOMATION_SECTIONS). The name and the
 // blurb of a section are messages under `sections.settings`.
 export type SettingsSection = {
   slug: string;
   icon: LucideIcon;
   resource: PermissionResource;
+  viewAction?: PermissionAction;
   group: SettingsGroup;
 };
 
@@ -44,12 +42,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
     slug: 'general',
     icon: Info,
-    resource: 'danger_zone',
-    group: 'general',
-  },
-  {
-    slug: 'notifications',
-    icon: Bell,
     resource: 'danger_zone',
     group: 'general',
   },
@@ -75,6 +67,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     slug: 'custom-fields',
     icon: ListPlus,
     resource: 'custom_fields',
+    group: 'configuration',
+  },
+  {
+    slug: 'issue-templates',
+    icon: FileText,
+    resource: 'issue_templates',
     group: 'configuration',
   },
   {
@@ -104,49 +102,27 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
     slug: 'git',
     icon: GitPullRequest,
-    resource: 'integrations',
+    resource: 'repositories',
+    viewAction: 'edit',
+    group: 'automation',
+  },
+  {
+    slug: 'import-export',
+    icon: Import,
+    resource: 'import_export',
     group: 'automation',
   },
 ];
 
-// The AI configuration items are their own nav routes (not /settings/:section
-// pages), but reuse the SettingsSection shape for their page header and permission
-// resource. They sit in the "Configure" item of the main sidebar's AI Team group.
+// The agents section is its own nav route (not a /settings/:section page), but
+// reuses the SettingsSection shape for its page header and permission resource. It
+// is listed in the main sidebar's AI Team group.
 export const AI_AGENTS_SECTION: SettingsSection = {
   slug: 'ai-agents',
   icon: Bot,
   resource: 'ai_agents',
   group: 'ai',
 };
-
-export const INTEGRATIONS_SECTION: SettingsSection = {
-  slug: 'integrations',
-  icon: KeyRound,
-  resource: 'integrations',
-  group: 'ai',
-};
-
-export const AGENT_SKILLS_SECTION: SettingsSection = {
-  slug: 'agent-skills',
-  icon: BookText,
-  resource: 'agent_skills',
-  group: 'ai',
-};
-
-export const AGENT_TOOLS_SECTION: SettingsSection = {
-  slug: 'agent-tools',
-  icon: Wrench,
-  resource: 'agent_tools',
-  group: 'ai',
-};
-
-// The "Configure" nav items, in sidebar order.
-export const AI_SECTIONS: SettingsSection[] = [
-  INTEGRATIONS_SECTION,
-  AI_AGENTS_SECTION,
-  AGENT_SKILLS_SECTION,
-  AGENT_TOOLS_SECTION,
-];
 
 // The settings sections split by sidebar group.
 export const GENERAL_SECTIONS = SETTINGS_SECTIONS.filter((s) => s.group === 'general');

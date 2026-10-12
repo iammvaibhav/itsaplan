@@ -7,7 +7,6 @@ import {
   applyOverrides,
   DEFAULT_COMBOS,
   formatCombo,
-  matchedDigit,
   matchesCombo,
   type HotkeyCombos,
   type HotkeyId,
@@ -35,17 +34,10 @@ export function useHotkeyCombos(): HotkeyCombos {
   return useContext(HotkeysCtx);
 }
 
-// Matchers bound to the combinations in effect. `matches` answers whether an event
-// is that shortcut; `digit` returns the 1–9 a positional shortcut was pressed with.
+// Whether a key press is the shortcut `id`, under the combinations in effect.
 export function useHotkeyMatch() {
   const combos = useHotkeyCombos();
-  return useMemo(
-    () => ({
-      matches: (e: KeyboardEvent, id: HotkeyId) => matchesCombo(e, combos[id]),
-      digit: (e: KeyboardEvent, id: HotkeyId) => matchedDigit(e, combos[id]),
-    }),
-    [combos],
-  );
+  return useMemo(() => (e: KeyboardEvent, id: HotkeyId) => matchesCombo(e, combos[id]), [combos]);
 }
 
 // True on macOS, so a shortcut is shown as ⌘K rather than Ctrl+K. Resolved after

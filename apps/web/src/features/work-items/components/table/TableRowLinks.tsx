@@ -1,4 +1,4 @@
-import { type IssueLinkRef } from '@/lib/api';
+import type { IssueLinkRef } from '@/lib/api/endpoints/issues';
 import { type Maps } from '@/utils/project';
 import { cn } from '@/lib/utils';
 import { useLinkRelationLabel } from '@/hooks/useLinkRelationLabel';
@@ -42,6 +42,7 @@ export function TableRowLinks({
               className="flex min-w-0 items-center gap-2 rounded py-0.5 text-left text-xs text-muted-foreground hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 onOpenIssue(link.issue.id);
               }}
             >

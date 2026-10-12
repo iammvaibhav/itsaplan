@@ -2,6 +2,8 @@ import { Elysia } from 'elysia';
 import { HttpError, pgErrorCode } from './shared/lib';
 import { authContext } from './shared/auth-context';
 import { projectRoutes } from './modules/projects';
+import { teamRoutes } from './modules/teams';
+import { workspaceRoutes } from './modules/workspaces';
 import { memberRoutes } from './modules/members';
 import { roleRoutes } from './modules/roles';
 import { inviteRoutes } from './modules/invites';
@@ -13,10 +15,14 @@ import { integrationRoutes } from './modules/agents/integrations';
 import { agentSkillRoutes } from './modules/agents/skills';
 import { agentToolRoutes } from './modules/agents/tools';
 import { customFieldRoutes } from './modules/custom-fields';
+import { issueTemplateRoutes } from './modules/issue-templates';
 import { issueRoutes } from './modules/issues';
 import { initiativeRoutes } from './modules/initiatives';
 import { cycleRoutes } from './modules/cycles';
 import { attachmentRoutes } from './modules/attachments';
+import { chatAttachmentRoutes } from './modules/chat-attachments';
+import { importRoutes } from './modules/imports';
+import { importExportRoutes } from './modules/import-export';
 import { avatarRoutes } from './modules/avatars';
 import { viewRoutes } from './modules/views';
 import { shareRoutes } from './modules/share';
@@ -25,11 +31,13 @@ import { webhookRoutes } from './modules/webhooks';
 import { gitSettingsRoutes } from './modules/git';
 import { dashboardRoutes } from './modules/dashboards';
 import { noteBoardRoutes } from './modules/note-boards';
+import { documentRoutes } from './modules/documents';
 import { analyticsRoutes } from './modules/analytics';
 import { chartRoutes } from './modules/charts';
 import { settingsRoutes } from './modules/settings';
 import { godRoutes } from './modules/god';
 import { agentScheduleRoutes } from './modules/agents/schedules';
+import { modelPriceRoutes } from './modules/agents/prices';
 import { agentRunnerRoutes } from './modules/agents/runner';
 import { agentChatRoutes } from './modules/agents/chat';
 import { notificationRoutes } from './modules/notifications';
@@ -38,6 +46,7 @@ import { notificationPreferenceRoutes } from './modules/notification-preferences
 import { userPreferenceRoutes } from './modules/user-preferences';
 import { telegramRoutes } from './modules/telegram';
 import { syncRoutes } from './modules/sync';
+import { linkPreviewRoutes } from './modules/link-previews';
 
 // The planner API: projects and their columns, issue types, labels, AI agents,
 // custom fields, issues, attachments, saved views, and actions. Mounted on the
@@ -72,11 +81,15 @@ export const planner = new Elysia({ name: 'planner' })
       set.status = 409;
       return { error: 'A record with this name already exists.' };
     }
+    // The message stays in the log only. drizzle puts the failed statement and its
+    // parameters in it, and the public routes would hand that to anyone.
     console.error('[planner] unhandled error:', error);
     set.status = 500;
-    return { error: error instanceof Error ? error.message : 'Internal server error' };
+    return { error: 'Internal server error' };
   })
   .use(projectRoutes)
+  .use(teamRoutes)
+  .use(workspaceRoutes)
   .use(memberRoutes)
   .use(roleRoutes)
   .use(inviteRoutes)
@@ -88,10 +101,14 @@ export const planner = new Elysia({ name: 'planner' })
   .use(agentSkillRoutes)
   .use(agentToolRoutes)
   .use(customFieldRoutes)
+  .use(issueTemplateRoutes)
   .use(issueRoutes)
   .use(initiativeRoutes)
   .use(cycleRoutes)
   .use(attachmentRoutes)
+  .use(chatAttachmentRoutes)
+  .use(importRoutes)
+  .use(importExportRoutes)
   .use(avatarRoutes)
   .use(viewRoutes)
   .use(shareRoutes)
@@ -99,10 +116,12 @@ export const planner = new Elysia({ name: 'planner' })
   .use(webhookRoutes)
   .use(gitSettingsRoutes)
   .use(agentScheduleRoutes)
+  .use(modelPriceRoutes)
   .use(agentRunnerRoutes)
   .use(agentChatRoutes)
   .use(dashboardRoutes)
   .use(noteBoardRoutes)
+  .use(documentRoutes)
   .use(analyticsRoutes)
   .use(chartRoutes)
   .use(notificationRoutes)
@@ -111,5 +130,6 @@ export const planner = new Elysia({ name: 'planner' })
   .use(userPreferenceRoutes)
   .use(telegramRoutes)
   .use(syncRoutes)
+  .use(linkPreviewRoutes)
   .use(settingsRoutes)
   .use(godRoutes);

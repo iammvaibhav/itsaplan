@@ -9,13 +9,13 @@
 
 export type HotkeyId =
   | 'palette.toggle'
-  | 'project.switch'
   | 'sidebar.toggle'
   | 'view.kanban'
   | 'view.table'
   | 'view.timeline'
   | 'view.calendar'
   | 'issue.new'
+  | 'initiative.new'
   | 'project.new'
   | 'project.settings'
   | 'chat.toggle'
@@ -28,8 +28,8 @@ export type HotkeyGroup = 'general' | 'workItems';
 // `scope` decides when the binding is live. A 'global' one fires even while the
 // user types or an overlay is open; an 'app' one is suppressed then, because its
 // combination is a plain key that would land in the text being typed.
-// `fixed` marks a binding that cannot be rebound: it is positional (⌘1–9) rather
-// than a single combination.
+// `fixed` marks a binding that cannot be rebound: it is owned by a primitive that
+// carries its own listener.
 export type HotkeyDef = {
   id: HotkeyId;
   group: HotkeyGroup;
@@ -42,21 +42,13 @@ export type HotkeyDef = {
 export const HOTKEY_GROUPS: HotkeyGroup[] = ['general', 'workItems'];
 
 // A combo is written as lowercase tokens joined by '+': the modifiers 'mod'
-// (⌘ on macOS, Ctrl elsewhere), 'shift' and 'alt', then the key. The key 'digit'
-// stands for the digits 1–9 and is only used by the positional project switch.
+// (⌘ on macOS, Ctrl elsewhere), 'shift' and 'alt', then the key.
 export const HOTKEYS: HotkeyDef[] = [
   {
     id: 'palette.toggle',
     group: 'general',
     combo: 'mod+k',
     scope: 'global',
-  },
-  {
-    id: 'project.switch',
-    group: 'general',
-    combo: 'mod+digit',
-    scope: 'global',
-    fixed: true,
   },
   // Bound by the sidebar primitive (components/ui/sidebar), which carries its own
   // listener. Listed here so the shortcut is documented in one place; it is not
@@ -65,10 +57,11 @@ export const HOTKEYS: HotkeyDef[] = [
     id: 'sidebar.toggle',
     group: 'general',
     combo: 'mod+b',
-    scope: 'global',
+    scope: 'app',
     fixed: true,
   },
   { id: 'issue.new', group: 'general', combo: 'n', scope: 'app' },
+  { id: 'initiative.new', group: 'general', combo: 'i', scope: 'app' },
   { id: 'project.new', group: 'general', combo: 'b', scope: 'app' },
   {
     id: 'project.settings',
@@ -141,14 +134,6 @@ export function matchesCombo(e: KeyEventLike, combo: string): boolean {
   return matchesParsed(e, c) && e.key.toLowerCase() === c.key;
 }
 
-// The digit 1–9 a positional combination was pressed with, or null. Used by the
-// project switch, which has no fixed key.
-export function matchedDigit(e: KeyEventLike, combo: string): number | null {
-  const c = parseCombo(combo);
-  if (c.key !== 'digit' || !matchesParsed(e, c)) return null;
-  return /^[1-9]$/.test(e.key) ? Number(e.key) : null;
-}
-
 // The combination a key press stands for, or null when the press cannot be bound:
 // a modifier on its own, or a key that is not a letter or a digit. Used by the
 // settings screens to record a new binding.
@@ -179,6 +164,6 @@ export function formatCombo(combo: string, isMac: boolean): string {
   if (c.mod) out.push(isMac ? '⌘' : 'Ctrl');
   if (c.shift) out.push(isMac ? '⇧' : 'Shift');
   if (c.alt) out.push(isMac ? '⌥' : 'Alt');
-  out.push(c.key === 'digit' ? '1–9' : c.key.toUpperCase());
+  out.push(c.key.toUpperCase());
   return isMac ? out.join('') : out.join('+');
 }

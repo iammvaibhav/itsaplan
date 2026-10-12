@@ -9,12 +9,12 @@ import { iso } from '#shared/lib';
 // The delivery side is separate.
 
 // The event types a subscription can select. Keep this list in sync with the events
-// the delivery side emits (modules/issues/service.ts, activity.ts, links.ts) and
-// with the frontend list (apps/web src/lib/api.ts).
+// emitted through modules/issues/webhook-payload.ts and with the frontend list
+// (apps/web src/lib/api/endpoints/webhooks.ts).
 //
-// issue.updated fires on any field change. The granular issue.assigned,
-// issue.state_changed, and issue.label_changed fire in addition, and only when that
-// specific field changes on an existing issue. issue.state_changed fires when the
+// issue.updated fires on any field change, archiving and restoring included. The
+// granular issue.assigned, issue.state_changed, and issue.label_changed fire in
+// addition, and only when that specific field changes on an existing issue. issue.state_changed fires when the
 // issue moves to a different state (column). issue.link_changed fires for both issues
 // of an added or removed relation, and without issue.updated: no field of either
 // issue changed.
@@ -27,6 +27,11 @@ export const WEBHOOK_EVENT_TYPES = [
   'issue.label_changed',
   'issue.link_changed',
   'comment.created',
+  // An edit changes a comment's body; a delete removes the comment and its replies.
+  // Both carry the comment as their payload, and neither fires comment.created
+  // again for the replies a delete takes with it.
+  'comment.updated',
+  'comment.deleted',
 ] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
@@ -52,9 +57,9 @@ function mapWebhook(row: typeof webhook.$inferSelect): WebhookRow {
   };
 }
 
-// A signing secret for a new subscription. The client gets it back so it can verify
-// delivered payloads. The server generates it, and never derives it from user input.
-function generateSecret(): string {
+// A signing secret for a new subscription. The server generates it, and never derives
+// it from user input.
+export function generateSecret(): string {
   return `whsec_${randomBytes(24).toString('hex')}`;
 }
 
@@ -100,6 +105,11 @@ export async function updateWebhook(
   if (patch.url !== undefined) set.url = patch.url;
   if (patch.events !== undefined) set.events = patch.events;
   if (patch.isActive !== undefined) set.isActive = patch.isActive;
+  // The worker keeps a webhook active while its consecutive failures stay under the
+  // disable threshold, and clears that counter only on a delivery that succeeds. A
+  // webhook switched back on therefore starts at the threshold, and its next failed
+  // attempt disables it again, so turning it on clears the counter with it.
+  if (patch.isActive === true) set.consecutiveFailures = 0;
   if (Object.keys(set).length === 0) return getWebhook(id);
   const [row] = await db.update(webhook).set(set).where(eq(webhook.id, id)).returning();
   return row ? mapWebhook(row) : null;

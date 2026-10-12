@@ -1,6 +1,8 @@
 import { Copy, Pencil, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { ActionDef, CustomField, ProjectDetail } from '@/lib/api';
+import type { ActionDef } from '@/lib/api/endpoints/actions';
+import type { CustomField } from '@/lib/api/endpoints/customFields';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import { useFilterFields } from '@/hooks/useFilterFields';
 import { useEffectText } from '@/hooks/useEffectText';
 import { describeEffect } from '@/utils/actions';
@@ -27,7 +29,7 @@ export function SettingsActionRow({
 }) {
   const t = useTranslations('settings.actions');
   const can = useSettingsCan();
-  const { describeConditions } = useFilterFields(project.project.key);
+  const { describeConditions } = useFilterFields(project.project.ref);
   const effectText = useEffectText();
   const conditions = describeConditions(action.condition, project, customFields);
   const effects = describeEffect(action.effect, project, effectText);

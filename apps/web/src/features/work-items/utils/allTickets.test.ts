@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 // @ts-expect-error vitest is provided at workspace level
 import { describe, it } from 'vitest';
-import type { AllTicket, StateType } from '@/lib/api';
+import type { StateType } from '@/lib/api/endpoints/columns';
+import type { AllTicket } from '@/lib/api/endpoints/issues';
 import {
   groupTicketsByColumnName,
   compareColumns,
@@ -14,6 +15,7 @@ function ticket(columnName: string, stateType: StateType, title = 'T', position 
     id: 1,
     projectId: 1,
     projectKey: 'MKT',
+    projectRef: 'acme.MKT',
     projectName: 'Marketing',
     sequenceNumber: 1,
     identifier: 'MKT-1',

@@ -1,4 +1,7 @@
-import type { BoardIssue, Permissions, ProjectDetail, PublicScaffold } from '@/lib/api';
+import type { Permissions } from '@/lib/api/endpoints/roles';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { BoardIssue } from '@/lib/api/endpoints/issues';
+import type { PublicScaffold } from '@/lib/api/endpoints/share';
 
 // Assembles a ProjectDetail from a public share bundle so the read-only pages can
 // reuse the same components as the authenticated app (the board layouts, the issue
@@ -16,9 +19,16 @@ export function toPublicProjectDetail(
     issueTypes: scaffold.issueTypes,
     labels: scaffold.labels,
     labelGroups: scaffold.labelGroups,
-    assignees: scaffold.assignees.map((a) => ({ ...a, email: '', username: null })),
+    assignees: scaffold.assignees.map((a) => ({
+      ...a,
+      email: '',
+      username: null,
+      canReadWorkItems: false,
+    })),
     customFields: scaffold.customFields,
-    viewer: { role: 'member' },
+    // A public page creates nothing, so it needs no templates.
+    issueTemplates: [],
+    viewer: { role: 'member', teamRole: null, via: 'member' },
     permissions: {} as Permissions,
     issues,
     // A share bundle carries no cycle list; a view grouped by cycle gets its lanes

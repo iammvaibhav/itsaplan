@@ -1,4 +1,4 @@
-import type { Project } from '@/lib/api';
+import type { Project } from '@/lib/api/endpoints/projects';
 import type { WorkItemsView } from '@/utils/viewTypes';
 import type { CommandSection } from '@/utils/commands';
 import { useShellOptional } from '@/context/shellContext';
@@ -25,6 +25,7 @@ export default function CommandLayer({
   onViewChange,
   onNewIssue,
   onSelectAll,
+  onNewInitiative,
   onNewProject,
   onSelectProject,
   onOpenIssue,
@@ -42,7 +43,8 @@ export default function CommandLayer({
   onViewChange: (view: WorkItemsView) => void;
   onNewIssue: () => void;
   onSelectAll: () => void;
-  onNewProject: () => void;
+  onNewInitiative: () => void;
+  onNewProject: (() => void) | null;
   onSelectProject: (key: string) => void;
   onOpenIssue: (sequenceNumber: number) => void;
   onIssueDeleted: () => void;
@@ -55,6 +57,7 @@ export default function CommandLayer({
   const issue = useIssueCommands(project, currentIssueId, onIssueDeleted);
   const app = useAppCommands({
     hasProject,
+    initiativesEnabled: !!project?.project.initiativesEnabled,
     onBoard,
     view,
     projects,
@@ -62,6 +65,7 @@ export default function CommandLayer({
     onViewChange,
     onNewIssue,
     onSelectAll,
+    onNewInitiative,
     onNewProject,
     onSelectProject,
     onToggleChat,

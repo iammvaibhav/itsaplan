@@ -1,9 +1,19 @@
 import { usePathname } from 'next/navigation';
+import { useShellRoute } from '@/hooks/useShellRoute';
 import { useTranslations } from 'next-intl';
-import { Inbox, LayoutDashboard, RefreshCw, SquareKanban, StickyNote, Target } from 'lucide-react';
+import {
+  BookOpenText,
+  Inbox,
+  LayoutDashboard,
+  RefreshCw,
+  SquareKanban,
+  StickyNote,
+  Target,
+} from 'lucide-react';
 import {
   cyclesPath,
   dashboardsPath,
+  documentsPath,
   inboxPath,
   initiativesPath,
   notesPath,
@@ -30,6 +40,7 @@ export default function SidebarWorkNav({
 }) {
   const t = useTranslations('nav');
   const pathname = usePathname();
+  const routeSub = useShellRoute().sub;
   const { can } = usePermissions();
   const features = useProjectFeatures();
   const disabled = !projectKey;
@@ -43,7 +54,7 @@ export default function SidebarWorkNav({
     !!projectKey &&
     (pathname === projectPath(projectKey) ||
       pathname.startsWith(`${projectPath(projectKey)}/view`) ||
-      pathname.startsWith(`${projectPath(projectKey)}/issue`));
+      routeSub === 'issue');
 
   // With favorites, Work items becomes a sub-list: the unfiltered board plus one
   // entry per favorite view.
@@ -120,6 +131,15 @@ export default function SidebarWorkNav({
               icon={RefreshCw}
               label={t('cycles')}
               active={pathname.includes('/cycles')}
+              disabled={disabled}
+            />
+          )}
+          {features.documents && can('documents', 'read') && (
+            <SidebarNavItem
+              href={projectKey ? documentsPath(projectKey) : '#'}
+              icon={BookOpenText}
+              label={t('documents')}
+              active={pathname.includes('/docs')}
               disabled={disabled}
             />
           )}

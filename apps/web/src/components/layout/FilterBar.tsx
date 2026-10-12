@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { ProjectDetail, CustomField } from '@/lib/api';
+import type { CustomField } from '@/lib/api/endpoints/customFields';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
 import type { FilterCondition, FilterSet } from '@/utils/filters';
 import type { FieldSpec } from '@/utils/filterFields';
 import { newCondition, useFilterFields } from '@/hooks/useFilterFields';
@@ -23,7 +24,7 @@ export default function FilterBar({
   customFields: CustomField[];
 }) {
   const t = useTranslations('filters');
-  const { fieldSpecs } = useFilterFields(project.project.key);
+  const { fieldSpecs } = useFilterFields(project.project.ref);
   const [addOpen, setAddOpen] = useState(false);
   const specs = fieldSpecs(project, customFields);
   // The pills read a catalog that also carries the fields only the current

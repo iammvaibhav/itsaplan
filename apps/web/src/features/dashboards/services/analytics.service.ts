@@ -4,28 +4,54 @@
 // dashboards feature reads these.
 
 import { useQuery } from '@tanstack/react-query';
-import { api, type PulseUnit } from '@/lib/api';
+import {
+  type BurnupParams,
+  type PulseUnit,
+  getBreakdown,
+  getBurnup,
+  getPulse,
+  getThroughput,
+  getAgentRuns,
+  getAgentRunStats,
+  getWebhookStats,
+  getAgentWorkload,
+  listActivity,
+} from '@/lib/api/endpoints/analytics';
 import type { BreakdownBy } from '@/utils/dashboardWidgets';
 import { qk } from '@/services/queryKeys';
 
 export function useBreakdownQuery(projectKey: string, by: BreakdownBy) {
   return useQuery({
     queryKey: qk.analytics(projectKey, 'breakdown', { by }),
-    queryFn: () => api.getBreakdown(projectKey, by),
+    queryFn: () => getBreakdown(projectKey, by),
   });
 }
 
-export function usePulseQuery(projectKey: string, unit: PulseUnit, columns: number) {
+export function usePulseQuery(
+  projectKey: string,
+  unit: PulseUnit,
+  columns: number,
+  scope: 'project' | 'me' = 'project',
+  currentUserId?: string | null,
+) {
   return useQuery({
-    queryKey: qk.analytics(projectKey, 'pulse', { unit, columns }),
-    queryFn: () => api.getPulse(projectKey, unit, columns),
+    queryKey: qk.analytics(projectKey, 'pulse', { unit, columns, scope, currentUserId }),
+    queryFn: () => getPulse(projectKey, unit, columns, scope),
+    enabled: scope !== 'me' || Boolean(currentUserId),
   });
 }
 
 export function useThroughputQuery(projectKey: string, weeks: number) {
   return useQuery({
     queryKey: qk.analytics(projectKey, 'throughput', { weeks }),
-    queryFn: () => api.getThroughput(projectKey, weeks),
+    queryFn: () => getThroughput(projectKey, weeks),
+  });
+}
+
+export function useBurnupQuery(projectKey: string, params: BurnupParams) {
+  return useQuery({
+    queryKey: qk.analytics(projectKey, 'burnup', params),
+    queryFn: () => getBurnup(projectKey, params),
   });
 }
 
@@ -35,28 +61,28 @@ export function useAgentRunsQuery(
 ) {
   return useQuery({
     queryKey: qk.analytics(projectKey, 'agent-runs', params),
-    queryFn: () => api.getAgentRuns(projectKey, params),
+    queryFn: () => getAgentRuns(projectKey, params),
   });
 }
 
 export function useAgentRunStatsQuery(projectKey: string, days: number) {
   return useQuery({
     queryKey: qk.analytics(projectKey, 'agent-run-stats', { days }),
-    queryFn: () => api.getAgentRunStats(projectKey, days),
+    queryFn: () => getAgentRunStats(projectKey, days),
   });
 }
 
 export function useWebhookStatsQuery(projectKey: string, days: number) {
   return useQuery({
     queryKey: qk.analytics(projectKey, 'webhook-stats', { days }),
-    queryFn: () => api.getWebhookStats(projectKey, days),
+    queryFn: () => getWebhookStats(projectKey, days),
   });
 }
 
 export function useAgentWorkloadQuery(projectKey: string) {
   return useQuery({
     queryKey: qk.analytics(projectKey, 'agent-workload'),
-    queryFn: () => api.getAgentWorkload(projectKey),
+    queryFn: () => getAgentWorkload(projectKey),
   });
 }
 
@@ -66,6 +92,6 @@ export function useActivityFeedQuery(
 ) {
   return useQuery({
     queryKey: qk.analytics(projectKey, 'activity', params),
-    queryFn: () => api.listActivity(projectKey, params),
+    queryFn: () => listActivity(projectKey, params),
   });
 }

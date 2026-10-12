@@ -1,9 +1,10 @@
 import { t } from 'elysia';
+import { pageQueryFields, pageResponse } from '#shared/pagination';
 
 export { agentParams } from '../model';
 
 export const skillParams = t.Object({
-  projectKey: t.String(),
+  teamId: t.Numeric(),
   skillId: t.Numeric({ description: 'Skill id from list_agent_skills.' }),
 });
 
@@ -23,7 +24,7 @@ const SkillRefSchema = t.Object({
 
 export const SkillResponse = t.Object({
   id: t.Number(),
-  projectId: t.Number(),
+  teamId: t.Number(),
   name: t.String(),
   description: t.String(),
   source: skillSource,
@@ -33,6 +34,10 @@ export const SkillResponse = t.Object({
 });
 
 export const SkillListResponse = t.Array(SkillResponse);
+
+export const SkillPageResponse = pageResponse(SkillResponse);
+
+export const skillListQuery = t.Object(pageQueryFields);
 
 export const SkillMarkdownResponse = t.Object({ markdown: t.String() });
 

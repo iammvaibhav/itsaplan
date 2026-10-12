@@ -24,9 +24,9 @@
   "copyGroups": {
     "workflow": "سير العمل",
     "automation": "الأتمتة",
-    "project": "المشروع",
     "views": "العروض",
-    "aiTeam": "فريق الذكاء الاصطناعي"
+    "aiTeam": "فريق الذكاء الاصطناعي",
+    "knowledge": "المعرفة"
   },
   "copyItems": {
     "states": "الحالات",
@@ -35,14 +35,10 @@
     "customFields": "الحقول المخصّصة",
     "views": "العروض",
     "dashboards": "لوحات المعلومات",
+    "documents": "المستندات",
     "actions": "الإجراءات",
     "configuration": "التهيئة",
-    "roles": "الأدوار",
-    "notificationProviders": "مزوّدو الإشعارات",
     "webhooks": "خطافات الويب (webhooks)",
-    "integrations": "التكاملات (integrations)",
-    "tools": "الأدوات (tools)",
-    "skills": "المهارات (skills)",
     "agents": "الوكلاء (agents)",
     "schedules": "الجدولات"
   },
@@ -50,5 +46,6 @@
   "copyTitle": "نسخ المشروع \"{name}\"",
   "create": "إنشاء مشروع",
   "copyAction": "نسخ المشروع",
+  "defaultAgents": "الوكلاء الذين سينضمون إلى هذا المشروع: {names}",
   "copyName": "نسخة {name}"
 }

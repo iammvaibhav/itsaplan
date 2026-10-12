@@ -1,14 +1,17 @@
 import { useState } from 'react';
-import { type IssueLinkInputKind, type IssueRelations, type ProjectDetail } from '@/lib/api';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { IssueLinkInputKind, IssueRelations } from '@/lib/api/endpoints/issues';
 import { usePermissions } from '@/hooks/usePermissions';
 import { LINK_RELATIONS, inverseRelation, linkRelation, storedKind } from '@/utils/issueLinks';
 import { useLinkRelationLabel } from '@/hooks/useLinkRelationLabel';
-import { usePersistedOpen } from '../../hooks/usePersistedOpen';
+import { usePersistedOpen } from '@/hooks/usePersistedOpen';
 import { useLinkIssues, useUnlinkIssues } from '../../services/links.service';
+import { useSetRelatedIssueState } from '../../services/relatedIssues.service';
 import NewIssueModal from '../create/NewIssueModal';
 import IssueLinkDialog from './IssueLinkDialog';
 import IssueLinksAddMenu from './IssueLinksAddMenu';
 import IssueRefRow from './IssueRefRow';
+import IssueRefList from './IssueRefList';
 import IssueSectionHeading from './IssueSectionHeading';
 import { useTranslations } from 'next-intl';
 
@@ -43,6 +46,7 @@ export default function IssueLinksPanel({
   const { open, toggle } = usePersistedOpen('issue-links-open');
   const linkIssues = useLinkIssues();
   const unlinkIssues = useUnlinkIssues();
+  const setState = useSetRelatedIssueState(project.project.ref, issue.id);
 
   const links = issue.links;
   if (readOnly && links.length === 0) return null;
@@ -76,10 +80,10 @@ export default function IssueLinksPanel({
             {t('emptyHint')}
           </p>
         ) : (
-          <div className="flex flex-col gap-3">
+          <IssueRefList className="gap-y-3">
             {groups.map((group) => (
-              <div key={group.relation}>
-                <h4 className="mb-1 px-2 text-xs font-medium text-muted-foreground">
+              <div key={group.relation} className="col-span-full grid grid-cols-subgrid">
+                <h4 className="col-span-full mb-1 px-2 text-xs font-medium text-muted-foreground">
                   {relationLabel(group.relation)}
                 </h4>
                 {group.links.map((link) => (
@@ -87,14 +91,18 @@ export default function IssueLinksPanel({
                     key={link.id}
                     project={project}
                     issue={link.issue}
+                    scrollAnchorKey={`link:${link.id}`}
                     removeLabel={t('remove', { issue: link.issue.identifier })}
                     readOnly={readOnly}
                     onOpen={onOpenIssue && (() => onOpenIssue(link.issue.id))}
+                    onChangeState={
+                      canEdit ? (columnId) => setState(link.issue.id, columnId) : undefined
+                    }
                     onRemove={
                       canEdit
                         ? () =>
                             unlinkIssues.mutate({
-                              projectKey: project.project.key,
+                              projectKey: project.project.ref,
                               issueId: issue.id,
                               otherIssueId: link.issue.id,
                               linkId: link.id,
@@ -105,7 +113,7 @@ export default function IssueLinksPanel({
                 ))}
               </div>
             ))}
-          </div>
+          </IssueRefList>
         ))}
 
       {adding && (
@@ -138,7 +146,7 @@ export default function IssueLinksPanel({
           onClose={() => setCreating(null)}
           onCreated={(created) => {
             linkIssues.mutate({
-              projectKey: project.project.key,
+              projectKey: project.project.ref,
               issueId: issue.id,
               otherIssueId: created.id,
               kind: creating,

@@ -1,21 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { type Editor } from '@tiptap/react';
-import { Loader2, MoreHorizontal } from 'lucide-react';
-import {
-  type CycleRef,
-  type Issue,
-  type IssueFieldValueInput,
-  type ProjectDetail,
-  type Project,
-} from '@/lib/api';
+import { MoreHorizontal } from 'lucide-react';
+import type { IssueTemplate } from '@/lib/api/endpoints/issueTemplates';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { CycleRef, Issue, IssueFieldValueInput } from '@/lib/api/endpoints/issues';
 import { type NewIssueDefaults } from '@/utils/project';
+import { parseDate } from '@/utils/dates';
 import { cn } from '@/lib/utils';
 import { useSession } from '@/lib/auth-client';
 import { useCreateIssue, useSetFieldValue, useUpdateIssue } from '@/services/issues.service';
-import { useProjectQuery, useProjectsQuery } from '@/services/projects.service';
-import { useCycleOptionsQuery } from '@/services/cycles.service';
 import { fieldDefsForType } from '../../utils/fieldDefs';
-import { useFileDragZone } from '../../hooks/useFileDragZone';
+import { useFileDragZone } from '@/hooks/useFileDragZone';
 import { useFilePaste } from '../../hooks/useFilePaste';
 import { useNewIssueAttachments } from '../../hooks/useNewIssueAttachments';
 import {
@@ -24,16 +19,16 @@ import {
   replaceEmbed,
   stripEmbed,
   type Embeddable,
-} from '../../utils/attachmentEmbed';
+} from '@/components/common/editor/attachmentEmbed';
 import { DESCRIPTION_SECTION, OTHER_SECTION, fieldSectionId } from '../../utils/bodySections';
 import { hasFieldValue } from '../../utils/fieldValues';
 import EstimatePill from '../fields/EstimatePill';
 import IssueCustomFieldPill from '../fields/IssueCustomFieldPill';
-import ProjectSelect from '../fields/ProjectSelect';
 import NewIssueAttachButton from './NewIssueAttachButton';
 import NewIssueAttachmentStrip from './NewIssueAttachmentStrip';
 import NewIssueDropOverlay from './NewIssueDropOverlay';
-import Modal from '@/components/common/overlay/Modal';
+import NewIssueTemplatePill from './NewIssueTemplatePill';
+import Modal, { useModalFullscreen } from '@/components/common/overlay/Modal';
 import NewIssueBody from './NewIssueBody';
 import AssigneeSelect from '@/components/common/fields/AssigneeSelect';
 import DatePill from '@/components/common/fields/DatePill';
@@ -57,57 +52,40 @@ import InitiativeSelect from '../fields/InitiativeSelect';
 import CycleSelect from '../fields/CycleSelect';
 import { useTranslations } from 'next-intl';
 
-const STORE_KEY = 'planner_last_project_key';
-
-function getStoredProjectKey(projects: Project[] | undefined, defaultKey?: string): string {
-  if (defaultKey) return defaultKey;
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = localStorage.getItem(STORE_KEY);
-      if (stored && projects?.some((p) => p.key === stored)) {
-        return stored;
-      }
-    } catch {
-      // Storage unavailable (private mode / quota)
-    }
-  }
-  return projects?.[0]?.key ?? '';
-}
-
-interface NewIssueFormProps {
+export default function NewIssueModal({
+  project,
+  defaults,
+  crumb,
+  projectPicker,
+  onDraftChange,
+  onClose,
+  onCreated,
+}: {
   project: ProjectDetail;
-  projects?: Project[];
-  selectedProjectKey: string;
-  onSelectProject: (key: string) => void;
   defaults: NewIssueDefaults;
-  title: string;
-  onTitleChange: (title: string) => void;
-  description: string;
-  onDescriptionChange: (description: string) => void;
-  fullscreen: boolean;
+  // What the issue is being created for, named in the header after the title
+  // ("Subtask of ISS-12", "Blocked by ISS-12").
+  crumb?: string;
+  // Fork: a project pill shown first among the properties, for creating from the
+  // All tickets board where no project is selected (NewIssueAnyProjectModal).
+  projectPicker?: ReactNode;
+  // Fork: reports the typed title and description, so switching the project
+  // (which remounts this dialog) keeps them.
+  onDraftChange?: (draft: { title: string; description: string }) => void;
   onClose: () => void;
   onCreated: (created: Issue) => void;
-}
-
-function NewIssueForm({
-  project,
-  projects,
-  selectedProjectKey,
-  onSelectProject,
-  defaults,
-  title,
-  onTitleChange,
-  description,
-  onDescriptionChange,
-  fullscreen,
-  onCreated,
-}: NewIssueFormProps) {
+}) {
   const t = useTranslations('issue.create');
   const tFields = useTranslations('issue.fields');
+  const [title, setTitle] = useState(defaults.title ?? '');
+  const [description, setDescription] = useState(defaults.description ?? '');
+  useEffect(() => {
+    onDraftChange?.({ title, description });
+  }, [onDraftChange, title, description]);
   const [columnId, setColumnId] = useState(defaults.columnId ?? project.columns[0]?.id ?? 0);
   const [typeId, setTypeId] = useState<number | null>(
     defaults.typeId === undefined
-      ? (project.issueTypes.find((t) => t.isDefault)?.id ?? project.issueTypes[0]?.id ?? null)
+      ? (project.issueTypes.find((t) => t.isDefault)?.id ?? null)
       : defaults.typeId,
   );
   const [initiativeId, setInitiativeId] = useState<number | null>(defaults.initiativeId ?? null);
@@ -127,15 +105,15 @@ function NewIssueForm({
       ? userId
       : null;
   });
+  // Fork: new issues are delegated to the Paseo Commander agent (else the first
+  // agent) unless the caller set a delegate; the assignee stays the creator.
   const [delegateUserId, setDelegateUserId] = useState<string | null>(() => {
     if (defaults.delegateUserId !== undefined) return defaults.delegateUserId;
-    const commanderAgent =
-      project.assignees.find(
-        (a) =>
-          a.kind === 'agent' &&
-          (a.username?.toLowerCase() === 'commander' || a.name.toLowerCase() === 'commander'),
-      ) ?? project.assignees.find((a) => a.kind === 'agent');
-    return commanderAgent?.userId ?? null;
+    const agents = project.assignees.filter((a) => a.kind === 'agent');
+    const commander = agents.find(
+      (a) => a.username?.toLowerCase() === 'commander' || a.name.toLowerCase() === 'commander',
+    );
+    return (commander ?? agents[0])?.userId ?? null;
   });
   const [priority, setPriority] = useState(defaults.priority ?? '');
   const [estimatePoints, setEstimatePoints] = useState<number | null>(null);
@@ -145,6 +123,7 @@ function NewIssueForm({
   const [labelIds, setLabelIds] = useState<number[]>(defaults.labelIds ?? []);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { fullscreen, onToggleFullscreen } = useModalFullscreen();
 
   // Custom fields for the selected type (project-wide + type-scoped), off the
   // scaffold every member already loads. Fields flagged "show in main info" get their
@@ -162,10 +141,15 @@ function NewIssueForm({
     Object.fromEntries((defaults.fieldValues ?? []).map((f) => [f.fieldId, { value: f.userId }])),
   );
   const [justAddedId, setJustAddedId] = useState<number | null>(null);
+  // The template applied last, named on its pill, and how many times one has been
+  // applied. Every apply remounts the body: its editors read their markdown once,
+  // when they are created, so applying the same template twice has to remount too.
+  const [template, setTemplate] = useState<IssueTemplate | null>(null);
+  const [applyCount, setApplyCount] = useState(0);
 
   const createIssue = useCreateIssue();
-  const updateIssue = useUpdateIssue(project.project.key);
-  const setFieldValueMutation = useSetFieldValue(project.project.key);
+  const updateIssue = useUpdateIssue(project.project.ref);
+  const setFieldValueMutation = useSetFieldValue(project.project.ref);
   const attachments = useNewIssueAttachments();
 
   // The description editor instance, so a file dropped or pasted anywhere on the
@@ -237,6 +221,12 @@ function NewIssueForm({
     setActiveFieldIds((prev) => prev.filter((id) => valid.has(id)));
   }, [fieldDefs]);
 
+  // The calendars grey out days that would put one date on the wrong side of the
+  // other: the start no later than the due date, the due date no earlier than the
+  // start. Equal dates are allowed.
+  const latestStart = parseDate(dueDate);
+  const earliestDue = parseDate(startDate);
+
   const errorMessage = error ?? attachments.error;
   const bodyDefs = fieldDefs.filter((d) => d.showInBody);
   const propertyDefs = fieldDefs.filter((d) => !d.showInBody);
@@ -251,12 +241,26 @@ function NewIssueForm({
     setFieldValues((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   }
 
+  // Fills the dialog in from a template. A property the template leaves unset
+  // presets nothing, so what the dialog already holds stays.
+  function applyTemplate(next: IssueTemplate) {
+    setTemplate(next);
+    setApplyCount((n) => n + 1);
+    if (next.titleTemplate) setTitle(next.titleTemplate);
+    setDescription(next.descriptionTemplate);
+    if (next.columnId != null) setColumnId(next.columnId);
+    if (next.typeId != null) setTypeId(next.typeId);
+    if (next.priority != null) setPriority(next.priority);
+    if (next.assigneeUserId != null) setAssigneeUserId(next.assigneeUserId);
+    if (next.labelIds.length > 0) setLabelIds(next.labelIds);
+  }
+
   async function submit() {
     setSaving(true);
     setError(null);
     try {
       const created = await createIssue.mutateAsync({
-        projectKey: project.project.key,
+        projectKey: project.project.ref,
         input: {
           title: title.trim(),
           description: description.trim() || undefined,
@@ -300,15 +304,6 @@ function NewIssueForm({
         const value = typeof v.value === 'string' ? { ...v, value: rewrite(v.value) } : v;
         await setFieldValueMutation.mutateAsync({ issueId: created.id, fieldId: def.id, value });
       }
-
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem(STORE_KEY, project.project.key);
-        } catch {
-          // ignore
-        }
-      }
-
       onCreated(created);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -343,288 +338,205 @@ function NewIssueForm({
   });
 
   return (
-    <div
-      className={cn('flex min-h-0 flex-col', fullscreen && 'flex-1 overflow-hidden')}
-      {...dragHandlers}
-    >
-      {draggedFiles !== null && <NewIssueDropOverlay count={draggedFiles} />}
-      <input
-        ref={titleRef}
-        // `auto` once there is something to read, so a title keeps the script it
-        // was typed in. While the field is empty there is nothing to read from,
-        // and it would fall back to left-to-right and strand the placeholder.
-        dir={title ? 'auto' : undefined}
-        className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground"
-        placeholder={t('titlePlaceholder')}
-        value={title}
-        onChange={(e) => onTitleChange(e.target.value)}
-        autoFocus
-      />
-      <div className={cn('flex min-h-0 flex-col overflow-hidden', fullscreen && 'flex-1')}>
-        <NewIssueBody
-          section={bodySection}
-          onSectionChange={setBodySection}
-          fullscreen={fullscreen}
-          description={description}
-          onDescriptionChange={onDescriptionChange}
-          onDescriptionReady={setDescEditor}
-          bodyDefs={bodyDefs}
-          fieldValues={fieldValues}
-          assignees={project.assignees}
-          onFieldValue={setFieldValue}
-          onFieldEditorReady={(id, editor) => {
-            if (editor) fieldEditors.current.set(id, editor);
-            else fieldEditors.current.delete(id);
-          }}
-          uploadFile={attachments.uploadFile}
-        />
-      </div>
-
-      <div className={`${bodyDefs.length > 0 ? 'mt-8' : 'mt-4'} flex flex-wrap items-center gap-2`}>
-        {projects && projects.length > 1 && (
-          <ProjectSelect
-            projects={projects}
-            value={selectedProjectKey}
-            onChange={onSelectProject}
-          />
-        )}
-
-        <StatusSelect columns={project.columns} value={columnId} onChange={setColumnId} />
-
-        {project.assignees.length > 0 && (
-          <AssigneeSelect
-            assignees={project.assignees}
-            value={assigneeUserId}
-            onChange={setAssigneeUserId}
-            placeholder={tFields('assignee')}
-          />
-        )}
-
-        {project.assignees.some((a) => a.kind === 'agent') && (
-          <DelegateSelect
-            assignees={project.assignees}
-            value={delegateUserId}
-            onChange={setDelegateUserId}
-            placeholder={tFields('delegate')}
-          />
-        )}
-
-        <PrioritySelect value={priority} onChange={setPriority} />
-
-        {project.issueTypes.length > 0 && (
-          <TypeSelect issueTypes={project.issueTypes} value={typeId} onChange={setTypeId} />
-        )}
-
-        {project.project.initiativesEnabled && (
-          <InitiativeSelect
-            projectKey={project.project.key}
-            value={initiativeId}
-            onChange={setInitiativeId}
-          />
-        )}
-
-        {project.project.cyclesEnabled && (
-          <CycleSelect projectKey={project.project.key} value={cycle} onChange={setCycle} />
-        )}
-
-        {project.labels.length > 0 && (
-          <LabelsSelect
-            labels={project.labels}
-            groups={project.labelGroups}
-            value={labelIds}
-            onToggle={toggleLabel}
-          />
-        )}
-
-        {project.project.pointsEstimateEnabled && (
-          <EstimatePill kind="points" value={estimatePoints} onChange={setEstimatePoints} />
-        )}
-
-        {project.project.timeEstimateEnabled && (
-          <EstimatePill kind="time" value={estimateMinutes} onChange={setEstimateMinutes} />
-        )}
-
-        <DatePill
-          value={startDate || null}
-          placeholder={tFields('startDate')}
-          onChange={(v) => setStartDate(v ?? '')}
-        />
-
-        <DatePill
-          value={dueDate || null}
-          placeholder={tFields('dueDate')}
-          onChange={(v) => setDueDate(v ?? '')}
-        />
-
-        {activeDefs.map((def) => (
-          <IssueCustomFieldPill
-            key={def.id}
-            def={def}
-            value={fieldValues[def.id]}
-            assignees={project.assignees}
-            defaultOpen={def.id === justAddedId}
-            onChange={(v) => setFieldValue(def.id, v)}
-          />
-        ))}
-
-        {availableDefs.length > 0 && (
-          <Popover open={addFieldOpen} onOpenChange={setAddFieldOpen}>
-            <PopoverTrigger asChild>
-              <Pill>
-                <MoreHorizontal />
-              </Pill>
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-0" align="start">
-              <Command>
-                <CommandInput placeholder={t('addFieldPlaceholder')} />
-                <CommandList>
-                  <CommandEmpty>{t('noFields')}</CommandEmpty>
-                  <CommandGroup>
-                    {availableDefs.map((def) => (
-                      <CommandItem
-                        key={def.id}
-                        value={def.name}
-                        onSelect={() => {
-                          setActiveFieldIds((ids) => [...ids, def.id]);
-                          setJustAddedId(def.id);
-                          setAddFieldOpen(false);
-                        }}
-                      >
-                        <span className="flex-1">{def.name}</span>
-                        <span className="text-xs text-muted-foreground">{def.fieldType}</span>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        )}
-      </div>
-
-      {errorMessage && <p className="mt-3 text-xs text-destructive">{errorMessage}</p>}
-
-      <div className="mt-4 flex items-center gap-2 border-t pt-3">
-        <NewIssueAttachButton onPick={attachments.attach} />
-        <NewIssueAttachmentStrip
-          items={attachments.pending}
-          onInsert={bodySection === OTHER_SECTION ? undefined : insertIntoBody}
-          onAnnotate={annotateAttachment}
-          onRemove={removeAttachment}
-        />
-        <Button className="ml-auto" disabled={saving || !title.trim()} onClick={submit}>
-          {t('submit')}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-export default function NewIssueModal({
-  project: initialProject,
-  projects: initialProjects,
-  defaults = {},
-  crumb,
-  onClose,
-  onCreated,
-}: {
-  project?: ProjectDetail;
-  projects?: Project[];
-  defaults?: NewIssueDefaults;
-  // What the issue is being created for, named in the header after the title
-  // ("Subtask of ISS-12", "Blocked by ISS-12").
-  crumb?: string;
-  onClose: () => void;
-  onCreated: (created: Issue) => void;
-}) {
-  const t = useTranslations('issue.create');
-  const tCommon = useTranslations('common');
-  const projectsQuery = useProjectsQuery();
-  const projects = initialProjects ?? projectsQuery.data ?? [];
-  const [selectedProjectKey, setSelectedProjectKey] = useState(() =>
-    getStoredProjectKey(projects, initialProject?.project.key),
-  );
-
-  useEffect(() => {
-    if (!selectedProjectKey && projects.length > 0) {
-      setSelectedProjectKey(getStoredProjectKey(projects, initialProject?.project.key));
-    }
-  }, [selectedProjectKey, projects, initialProject]);
-
-  const handleSelectProject = (key: string) => {
-    setSelectedProjectKey(key);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(STORE_KEY, key);
-      } catch {
-        // ignore
-      }
-    }
-  };
-
-  const projectKeyToFetch =
-    initialProject && initialProject.project.key === selectedProjectKey
-      ? null
-      : selectedProjectKey || null;
-
-  const projectQuery = useProjectQuery(projectKeyToFetch);
-  const scaffold = projectQuery.data ?? null;
-  const cyclesQuery = useCycleOptionsQuery(
-    scaffold?.project.cyclesEnabled ? selectedProjectKey : null,
-  );
-
-  const activeProject: ProjectDetail | null = useMemo(() => {
-    if (initialProject && initialProject.project.key === selectedProjectKey) {
-      return initialProject;
-    }
-    if (!scaffold) return null;
-    return {
-      ...scaffold,
-      issues: [],
-      changeSeq: 0,
-      plannedCycles: cyclesQuery.data ?? [],
-    };
-  }, [initialProject, selectedProjectKey, scaffold, cyclesQuery.data]);
-
-  const [title, setTitle] = useState(defaults.title ?? '');
-  const [description, setDescription] = useState(defaults.description ?? '');
-  const [fullscreen, setFullscreen] = useState(false);
-
-  return (
     <Modal
       title={t('title')}
       crumb={crumb}
-      projectKey={activeProject?.project.key ?? selectedProjectKey}
+      headerAction={
+        project.issueTemplates.length > 0 && (
+          <NewIssueTemplatePill
+            templates={project.issueTemplates}
+            applied={template}
+            onApply={applyTemplate}
+          />
+        )
+      }
+      scope={project.project.ref}
       onClose={onClose}
+      // The template pill comes before the title in the DOM, so the title has to
+      // claim the focus itself.
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        titleRef.current?.focus();
+      }}
       wide
       fullscreen={fullscreen}
-      onToggleFullscreen={() => setFullscreen((v) => !v)}
+      onToggleFullscreen={onToggleFullscreen}
       // Halves the dialog's bottom padding: the footer then sits as far from the
       // separator above it as from the dialog edge below.
       className="pb-3"
     >
-      {activeProject ? (
-        <NewIssueForm
-          key={activeProject.project.key}
-          project={activeProject}
-          projects={projects.length > 1 ? projects : undefined}
-          selectedProjectKey={selectedProjectKey}
-          onSelectProject={handleSelectProject}
-          defaults={defaults}
-          title={title}
-          onTitleChange={setTitle}
-          description={description}
-          onDescriptionChange={setDescription}
-          fullscreen={fullscreen}
-          onClose={onClose}
-          onCreated={onCreated}
+      <div
+        className={cn('flex min-h-0 flex-col', fullscreen && 'flex-1 overflow-hidden')}
+        {...dragHandlers}
+      >
+        {draggedFiles !== null && <NewIssueDropOverlay count={draggedFiles} />}
+        <input
+          ref={titleRef}
+          // `auto` once there is something to read, so a title keeps the script it
+          // was typed in. While the field is empty there is nothing to read from,
+          // and it would fall back to left-to-right and strand the placeholder.
+          dir={title ? 'auto' : undefined}
+          className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground"
+          placeholder={t('titlePlaceholder')}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
         />
-      ) : (
-        <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-          <Loader2 className="me-2 size-4 animate-spin" />
-          {tCommon('loading')}
+        <div className={cn('flex min-h-0 flex-col overflow-hidden', fullscreen && 'flex-1')}>
+          <NewIssueBody
+            key={applyCount}
+            section={bodySection}
+            onSectionChange={setBodySection}
+            fullscreen={fullscreen}
+            description={description}
+            onDescriptionChange={setDescription}
+            onDescriptionReady={setDescEditor}
+            bodyDefs={bodyDefs}
+            fieldValues={fieldValues}
+            assignees={project.assignees}
+            onFieldValue={setFieldValue}
+            onFieldEditorReady={(id, editor) => {
+              if (editor) fieldEditors.current.set(id, editor);
+              else fieldEditors.current.delete(id);
+            }}
+            uploadFile={attachments.uploadFile}
+          />
         </div>
-      )}
+
+        <div
+          className={`${bodyDefs.length > 0 ? 'mt-8' : 'mt-4'} flex flex-wrap items-center gap-2`}
+        >
+          {projectPicker}
+
+          <StatusSelect columns={project.columns} value={columnId} onChange={setColumnId} />
+
+          {project.assignees.some((a) => a.kind === 'member') && (
+            <AssigneeSelect
+              assignees={project.assignees}
+              value={assigneeUserId}
+              onChange={setAssigneeUserId}
+              placeholder={tFields('assignee')}
+            />
+          )}
+
+          {project.assignees.some((a) => a.kind === 'agent') && (
+            <DelegateSelect
+              assignees={project.assignees}
+              value={delegateUserId}
+              onChange={setDelegateUserId}
+              placeholder={tFields('delegate')}
+            />
+          )}
+
+          <PrioritySelect value={priority} onChange={setPriority} />
+
+          {project.issueTypes.length > 0 && (
+            <TypeSelect issueTypes={project.issueTypes} value={typeId} onChange={setTypeId} />
+          )}
+
+          {project.project.initiativesEnabled && (
+            <InitiativeSelect
+              projectKey={project.project.ref}
+              value={initiativeId}
+              onChange={setInitiativeId}
+            />
+          )}
+
+          {project.project.cyclesEnabled && (
+            <CycleSelect projectKey={project.project.ref} value={cycle} onChange={setCycle} />
+          )}
+
+          {project.labels.length > 0 && (
+            <LabelsSelect
+              labels={project.labels}
+              groups={project.labelGroups}
+              value={labelIds}
+              onToggle={toggleLabel}
+            />
+          )}
+
+          {project.project.pointsEstimateEnabled && (
+            <EstimatePill kind="points" value={estimatePoints} onChange={setEstimatePoints} />
+          )}
+
+          {project.project.timeEstimateEnabled && (
+            <EstimatePill kind="time" value={estimateMinutes} onChange={setEstimateMinutes} />
+          )}
+
+          <DatePill
+            value={startDate || null}
+            placeholder={tFields('startDate')}
+            onChange={(v) => setStartDate(v ?? '')}
+            disabled={latestStart ? { after: latestStart } : undefined}
+          />
+
+          <DatePill
+            value={dueDate || null}
+            placeholder={tFields('dueDate')}
+            onChange={(v) => setDueDate(v ?? '')}
+            disabled={earliestDue ? { before: earliestDue } : undefined}
+          />
+
+          {activeDefs.map((def) => (
+            <IssueCustomFieldPill
+              key={def.id}
+              def={def}
+              value={fieldValues[def.id]}
+              assignees={project.assignees}
+              defaultOpen={def.id === justAddedId}
+              onChange={(v) => setFieldValue(def.id, v)}
+            />
+          ))}
+
+          {availableDefs.length > 0 && (
+            <Popover open={addFieldOpen} onOpenChange={setAddFieldOpen}>
+              <PopoverTrigger asChild>
+                <Pill>
+                  <MoreHorizontal />
+                </Pill>
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-0" align="start">
+                <Command>
+                  <CommandInput placeholder={t('addFieldPlaceholder')} />
+                  <CommandList>
+                    <CommandEmpty>{t('noFields')}</CommandEmpty>
+                    <CommandGroup>
+                      {availableDefs.map((def) => (
+                        <CommandItem
+                          key={def.id}
+                          value={def.name}
+                          onSelect={() => {
+                            setActiveFieldIds((ids) => [...ids, def.id]);
+                            setJustAddedId(def.id);
+                            setAddFieldOpen(false);
+                          }}
+                        >
+                          <span className="flex-1">{def.name}</span>
+                          <span className="text-xs text-muted-foreground">{def.fieldType}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          )}
+        </div>
+
+        {errorMessage && <p className="mt-3 text-xs text-destructive">{errorMessage}</p>}
+
+        <div className="mt-4 flex items-center gap-2 border-t pt-3">
+          <NewIssueAttachButton onPick={attachments.attach} />
+          <NewIssueAttachmentStrip
+            items={attachments.pending}
+            onInsert={bodySection === OTHER_SECTION ? undefined : insertIntoBody}
+            onAnnotate={annotateAttachment}
+            onRemove={removeAttachment}
+          />
+          <Button className="ms-auto" disabled={saving || !title.trim()} onClick={submit}>
+            {t('submit')}
+          </Button>
+        </div>
+      </div>
     </Modal>
   );
 }

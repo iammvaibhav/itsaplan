@@ -1,18 +1,19 @@
 import { db, agentTool, agentToolLink, integrationCredential } from '@repo/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getTool, type ToolConfig } from '@repo/agent-tools';
 import { iso, HttpError, rethrowDuplicate } from '#shared/lib';
 import { decryptSecret } from '@repo/crypto';
 import { getCredentialById } from '../integrations/service';
 
-// Data access for configured tools. A configured tool binds a catalog tool (tool_key)
-// to one integration_credential. The secret lives on the credential, so a row here
-// carries no secret; the runtime decrypts the bound credential at call time. The list
-// DTO enriches a row with its credential's integration and label for display.
+// Data access for configured tools, shared by every project the team owns. A
+// configured tool binds a catalog tool (tool_key) to one integration_credential of the
+// team. The secret lives on the credential, so a row here carries no secret; the
+// runtime decrypts the bound credential at call time. The list DTO enriches a row with
+// its credential's integration and label for display.
 
 export interface AgentToolRow {
   id: number;
-  projectId: number;
+  teamId: number;
   toolKey: string;
   credentialId: number;
   integrationKey: string;
@@ -22,7 +23,7 @@ export interface AgentToolRow {
 
 const dtoColumns = {
   id: agentTool.id,
-  projectId: agentTool.projectId,
+  teamId: agentTool.teamId,
   toolKey: agentTool.toolKey,
   credentialId: agentTool.credentialId,
   integrationKey: integrationCredential.integrationKey,
@@ -34,22 +35,39 @@ function mapRow(row: Omit<AgentToolRow, 'createdAt'> & { createdAt: Date }): Age
   return { ...row, createdAt: iso(row.createdAt) };
 }
 
-export async function listAgentTools(projectId: number): Promise<AgentToolRow[]> {
-  const rows = await db
+function selectTools() {
+  return db
     .select(dtoColumns)
     .from(agentTool)
-    .innerJoin(integrationCredential, eq(integrationCredential.id, agentTool.credentialId))
-    .where(eq(agentTool.projectId, projectId))
-    .orderBy(agentTool.toolKey);
+    .innerJoin(integrationCredential, eq(integrationCredential.id, agentTool.credentialId));
+}
+
+// One page of the team's configured tools, by tool key, with how many it holds in
+// total.
+export async function listAgentTools(
+  teamId: number,
+  window: { limit: number; offset: number },
+): Promise<{ items: AgentToolRow[]; total: number }> {
+  const where = eq(agentTool.teamId, teamId);
+  const [rows, counted] = await Promise.all([
+    selectTools().where(where).orderBy(agentTool.toolKey).limit(window.limit).offset(window.offset),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(agentTool)
+      .where(where),
+  ]);
+  return { items: rows.map(mapRow), total: counted[0]?.count ?? 0 };
+}
+
+// The whole list, by tool key. What the picker that enables tools on an agent and the
+// dialog that adds one read.
+export async function listAgentToolOptions(teamId: number): Promise<AgentToolRow[]> {
+  const rows = await selectTools().where(eq(agentTool.teamId, teamId)).orderBy(agentTool.toolKey);
   return rows.map(mapRow);
 }
 
-async function getAgentToolById(id: number, projectId: number): Promise<AgentToolRow | null> {
-  const rows = await db
-    .select(dtoColumns)
-    .from(agentTool)
-    .innerJoin(integrationCredential, eq(integrationCredential.id, agentTool.credentialId))
-    .where(and(eq(agentTool.id, id), eq(agentTool.projectId, projectId)));
+async function getAgentToolById(id: number, teamId: number): Promise<AgentToolRow | null> {
+  const rows = await selectTools().where(and(eq(agentTool.id, id), eq(agentTool.teamId, teamId)));
   return rows[0] ? mapRow(rows[0]) : null;
 }
 
@@ -59,12 +77,12 @@ export interface NewAgentToolInput {
 }
 
 export async function createAgentTool(
-  projectId: number,
+  teamId: number,
   input: NewAgentToolInput,
 ): Promise<AgentToolRow> {
   const tool = getTool(input.toolKey);
   if (!tool) throw new HttpError(400, `Unknown tool: ${input.toolKey}`);
-  const credential = await getCredentialById(input.credentialId, projectId);
+  const credential = await getCredentialById(input.credentialId, teamId);
   if (!credential) throw new HttpError(400, 'Credential not found');
   if (credential.integrationKey !== tool.integration.key) {
     throw new HttpError(
@@ -75,19 +93,19 @@ export async function createAgentTool(
   try {
     const [row] = await db
       .insert(agentTool)
-      .values({ projectId, toolKey: input.toolKey, credentialId: input.credentialId })
+      .values({ teamId, toolKey: input.toolKey, credentialId: input.credentialId })
       .returning({ id: agentTool.id });
-    return (await getAgentToolById(row.id, projectId))!;
+    return (await getAgentToolById(row.id, teamId))!;
   } catch (err) {
     rethrowDuplicate(err, 'This tool on this credential');
     throw err;
   }
 }
 
-export async function deleteAgentTool(id: number, projectId: number): Promise<boolean> {
+export async function deleteAgentTool(id: number, teamId: number): Promise<boolean> {
   const deleted = await db
     .delete(agentTool)
-    .where(and(eq(agentTool.id, id), eq(agentTool.projectId, projectId)))
+    .where(and(eq(agentTool.id, id), eq(agentTool.teamId, teamId)))
     .returning({ id: agentTool.id });
   return deleted.length > 0;
 }
@@ -131,10 +149,10 @@ export async function listAgentToolsForRun(
   }));
 }
 
-// Unknown ids and ids from another project are ignored, not rejected.
+// Unknown ids and ids from another team are ignored, not rejected.
 export async function setAgentTools(
   agentId: number,
-  projectId: number,
+  teamId: number,
   agentToolIds: number[],
 ): Promise<void> {
   const unique = [...new Set(agentToolIds)];
@@ -145,7 +163,7 @@ export async function setAgentTools(
           await db
             .select({ id: agentTool.id })
             .from(agentTool)
-            .where(and(eq(agentTool.projectId, projectId), inArray(agentTool.id, unique)))
+            .where(and(eq(agentTool.teamId, teamId), inArray(agentTool.id, unique)))
         ).map((r) => r.id);
 
   await db.transaction(async (tx) => {

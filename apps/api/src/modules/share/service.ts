@@ -26,9 +26,10 @@ import { applyFilters } from '#modules/views/filters';
 
 // The project scaffold a read-only page needs to render issues: the same shape as
 // GET /projects/:projectKey minus the caller's viewer/permissions. Member emails
-// are stripped — a public page shows names, never emails.
+// are stripped — a public page shows names, never emails — and so is the team the
+// project belongs to, whose name is the owner's username.
 export interface ShareScaffold {
-  project: ProjectRow;
+  project: Omit<ProjectRow, 'teamId' | 'teamName'>;
   columns: Awaited<ReturnType<typeof listColumns>>;
   issueTypes: Awaited<ReturnType<typeof listIssueTypes>>;
   labels: Awaited<ReturnType<typeof listLabels>>;
@@ -79,8 +80,9 @@ async function buildScaffold(project: ProjectRow, extended: boolean): Promise<Sh
     extended ? listAssigneeCandidates(project.id) : [],
     extended ? listCustomFields(project.id, { allTypes: true }) : [],
   ]);
+  const { teamId: _teamId, teamName: _teamName, ...publicProject } = project;
   return {
-    project,
+    project: publicProject,
     columns,
     issueTypes,
     labels,
