@@ -59,9 +59,10 @@ export const project = pgTable('project', {
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
   nextSequence: integer('next_sequence').notNull().default(1),
-  // Whether this project is reachable through the MCP server. Off by default: an
-  // owner opts a project in before agents can work with it over MCP.
-  mcpEnabled: boolean('mcp_enabled').notNull().default(false),
+  // Whether this project is reachable through the MCP server. On by default in this
+  // fork: the instance's agents work over MCP, so every project starts reachable. An
+  // owner can still turn it off per project in Settings.
+  mcpEnabled: boolean('mcp_enabled').notNull().default(true),
   // Optional sections of the app, toggled per project in Settings -> Features. All
   // on by default. Turning one off only hides its UI; the rows it owns stay and
   // come back with it.

@@ -281,7 +281,7 @@ export async function copyProject(
   const newProject = await db.transaction(async (tx) => {
     // The optional sections the source project shows and the estimate kinds it
     // carries are part of its configuration, so the copy starts with the same ones.
-    // mcpEnabled is not carried: a copy opts into MCP on its own.
+    // mcpEnabled is not carried: a copy starts with the column default (on).
     const [sourceFeatures] = await tx
       .select({
         initiativesEnabled: project.initiativesEnabled,

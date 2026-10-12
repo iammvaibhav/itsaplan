@@ -1,0 +1,1 @@
+ALTER TABLE "project" ALTER COLUMN "mcp_enabled" SET DEFAULT true;
