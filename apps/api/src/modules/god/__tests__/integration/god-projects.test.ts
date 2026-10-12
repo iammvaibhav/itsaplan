@@ -40,7 +40,7 @@ describe('god projects', () => {
       expect(res.data?.items[0]).toMatchObject({
         key: 'ALC',
         name: 'Alice Only',
-        mcpEnabled: true,
+        mcpEnabled: false,
         memberCount: 1,
         issueCount: 0,
       });

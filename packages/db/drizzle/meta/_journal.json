@@ -750,13 +750,6 @@
       "when": 1787600000000,
       "tag": "0106_ready_to_review_column",
       "breakpoints": true
-    },
-    {
-      "idx": 107,
-      "version": "7",
-      "when": 1791840401340,
-      "tag": "0107_project_mcp_on_by_default",
-      "breakpoints": true
     }
   ]
 }
